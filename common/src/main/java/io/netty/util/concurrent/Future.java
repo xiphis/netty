@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -63,7 +63,7 @@ public interface Future<V> extends java.util.concurrent.Future<V> {
     Future<V> addListeners(GenericFutureListener<? extends Future<? super V>>... listeners);
 
     /**
-     * Removes the specified listener from this future.
+     * Removes the first occurrence of the specified listener from this future.
      * The specified listener is no longer notified when this
      * future is {@linkplain #isDone() done}.  If the specified
      * listener is not associated with this future, this method
@@ -72,7 +72,7 @@ public interface Future<V> extends java.util.concurrent.Future<V> {
     Future<V> removeListener(GenericFutureListener<? extends Future<? super V>> listener);
 
     /**
-     * Removes the specified listeners from this future.
+     * Removes the first occurrence for each of the listeners from this future.
      * The specified listeners are no longer notified when this
      * future is {@linkplain #isDone() done}.  If the specified
      * listeners are not associated with this future, this method
@@ -155,14 +155,14 @@ public interface Future<V> extends java.util.concurrent.Future<V> {
      * Return the result without blocking. If the future is not done yet this will return {@code null}.
      *
      * As it is possible that a {@code null} value is used to mark the future as successful you also need to check
-     * if the future is really done with {@link #isDone()} and not relay on the returned {@code null} value.
+     * if the future is really done with {@link #isDone()} and not rely on the returned {@code null} value.
      */
     V getNow();
 
     /**
      * {@inheritDoc}
      *
-     * If the cancellation was successful it will fail the future with an {@link CancellationException}.
+     * If the cancellation was successful it will fail the future with a {@link CancellationException}.
      */
     @Override
     boolean cancel(boolean mayInterruptIfRunning);

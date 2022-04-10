@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,13 +20,15 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
-import io.netty.channel.ChannelPromiseNotifier;
 import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.PromiseNotifier;
+import io.netty.util.internal.ObjectUtil;
+import io.netty.util.internal.PlatformDependent;
+import io.netty.util.internal.SuppressJava6Requirement;
 
 import java.util.concurrent.TimeUnit;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
-
 
 /**
  * Compresses a {@link ByteBuf} using the deflate algorithm.
@@ -44,6 +46,7 @@ public class JdkZlibEncoder extends ZlibEncoder {
     private final CRC32 crc = new CRC32();
     private static final byte[] gzipHeader = {0x1f, (byte) 0x8b, Deflater.DEFLATED, 0, 0, 0, 0, 0, 0, 0};
     private boolean writeHeader = true;
+    private static final int THREAD_POOL_DELAY_SECONDS = 10;
 
     /**
      * Creates a new zlib encoder with the default compression level ({@code 6})
@@ -92,13 +95,9 @@ public class JdkZlibEncoder extends ZlibEncoder {
      * @throws CompressionException if failed to initialize zlib
      */
     public JdkZlibEncoder(ZlibWrapper wrapper, int compressionLevel) {
-        if (compressionLevel < 0 || compressionLevel > 9) {
-            throw new IllegalArgumentException(
-                    "compressionLevel: " + compressionLevel + " (expected: 0-9)");
-        }
-        if (wrapper == null) {
-            throw new NullPointerException("wrapper");
-        }
+        ObjectUtil.checkInRange(compressionLevel, 0, 9, "compressionLevel");
+        ObjectUtil.checkNotNull(wrapper, "wrapper");
+
         if (wrapper == ZlibWrapper.ZLIB_OR_NONE) {
             throw new IllegalArgumentException(
                     "wrapper '" + ZlibWrapper.ZLIB_OR_NONE + "' is not " +
@@ -138,13 +137,8 @@ public class JdkZlibEncoder extends ZlibEncoder {
      * @throws CompressionException if failed to initialize zlib
      */
     public JdkZlibEncoder(int compressionLevel, byte[] dictionary) {
-        if (compressionLevel < 0 || compressionLevel > 9) {
-            throw new IllegalArgumentException(
-                    "compressionLevel: " + compressionLevel + " (expected: 0-9)");
-        }
-        if (dictionary == null) {
-            throw new NullPointerException("dictionary");
-        }
+        ObjectUtil.checkInRange(compressionLevel, 0, 9, "compressionLevel");
+        ObjectUtil.checkNotNull(dictionary, "dictionary");
 
         wrapper = ZlibWrapper.ZLIB;
         deflater = new Deflater(compressionLevel);
@@ -168,7 +162,7 @@ public class JdkZlibEncoder extends ZlibEncoder {
                 @Override
                 public void run() {
                     ChannelFuture f = finishEncode(ctx(), p);
-                    f.addListener(new ChannelPromiseNotifier(promise));
+                    PromiseNotifier.cascade(f, promise);
                 }
             });
             return p;
@@ -196,34 +190,56 @@ public class JdkZlibEncoder extends ZlibEncoder {
         }
 
         int len = uncompressed.readableBytes();
+        if (len == 0) {
+            return;
+        }
+
         int offset;
         byte[] inAry;
-        if (uncompressed.hasArray()) {
-            // if it is backed by an array we not need to to do a copy at all
-            inAry = uncompressed.array();
-            offset = uncompressed.arrayOffset() + uncompressed.readerIndex();
-            // skip all bytes as we will consume all of them
-            uncompressed.skipBytes(len);
-        } else {
-            inAry = new byte[len];
-            uncompressed.readBytes(inAry);
-            offset = 0;
-        }
-
-        if (writeHeader) {
-            writeHeader = false;
-            if (wrapper == ZlibWrapper.GZIP) {
-                out.writeBytes(gzipHeader);
+        ByteBuf heapBuf = null;
+        try {
+            if (uncompressed.hasArray()) {
+                // if it is backed by an array we not need to do a copy at all
+                inAry = uncompressed.array();
+                offset = uncompressed.arrayOffset() + uncompressed.readerIndex();
+                // skip all bytes as we will consume all of them
+                uncompressed.skipBytes(len);
+            } else {
+                heapBuf = ctx.alloc().heapBuffer(len, len);
+                uncompressed.readBytes(heapBuf, len);
+                inAry = heapBuf.array();
+                offset = heapBuf.arrayOffset() + heapBuf.readerIndex();
             }
-        }
 
-        if (wrapper == ZlibWrapper.GZIP) {
-            crc.update(inAry, offset, len);
-        }
+            if (writeHeader) {
+                writeHeader = false;
+                if (wrapper == ZlibWrapper.GZIP) {
+                    out.writeBytes(gzipHeader);
+                }
+            }
 
-        deflater.setInput(inAry, offset, len);
-        while (!deflater.needsInput()) {
-            deflate(out);
+            if (wrapper == ZlibWrapper.GZIP) {
+                crc.update(inAry, offset, len);
+            }
+
+            deflater.setInput(inAry, offset, len);
+            for (;;) {
+                deflate(out);
+                if (deflater.needsInput()) {
+                    // Consumed everything
+                    break;
+                } else {
+                    if (!out.isWritable()) {
+                        // We did not consume everything but the buffer is not writable anymore. Increase the capacity
+                        // to make more room.
+                        out.ensureWritable(out.writerIndex());
+                    }
+                }
+            }
+        } finally {
+            if (heapBuf != null) {
+                heapBuf.release();
+            }
         }
     }
 
@@ -239,6 +255,8 @@ public class JdkZlibEncoder extends ZlibEncoder {
                 case ZLIB:
                     sizeEstimate += 2; // first two magic bytes
                     break;
+                default:
+                    // no op
             }
         }
         return ctx.alloc().heapBuffer(sizeEstimate);
@@ -261,7 +279,7 @@ public class JdkZlibEncoder extends ZlibEncoder {
                 public void run() {
                     ctx.close(promise);
                 }
-            }, 10, TimeUnit.SECONDS); // FIXME: Magic number
+            }, THREAD_POOL_DELAY_SECONDS, TimeUnit.SECONDS);
         }
     }
 
@@ -305,12 +323,26 @@ public class JdkZlibEncoder extends ZlibEncoder {
         return ctx.writeAndFlush(footer, promise);
     }
 
+    @SuppressJava6Requirement(reason = "Usage guarded by java version check")
     private void deflate(ByteBuf out) {
+        if (PlatformDependent.javaVersion() < 7) {
+            deflateJdk6(out);
+        }
         int numBytes;
         do {
             int writerIndex = out.writerIndex();
             numBytes = deflater.deflate(
                     out.array(), out.arrayOffset() + writerIndex, out.writableBytes(), Deflater.SYNC_FLUSH);
+            out.writerIndex(writerIndex + numBytes);
+        } while (numBytes > 0);
+    }
+
+    private void deflateJdk6(ByteBuf out) {
+        int numBytes;
+        do {
+            int writerIndex = out.writerIndex();
+            numBytes = deflater.deflate(
+                    out.array(), out.arrayOffset() + writerIndex, out.writableBytes());
             out.writerIndex(writerIndex + numBytes);
         } while (numBytes > 0);
     }

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,31 +15,35 @@
  */
 package io.netty.buffer;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.ByteOrder;
+
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests big-endian direct channel buffers
  */
 public class BigEndianDirectByteBufTest extends AbstractByteBufTest {
 
-    private ByteBuf buffer;
-
     @Override
-    protected ByteBuf newBuffer(int length) {
-        buffer = newDirectBuffer(length);
+    protected ByteBuf newBuffer(int length, int maxCapacity) {
+        ByteBuf buffer = newDirectBuffer(length, maxCapacity);
         assertSame(ByteOrder.BIG_ENDIAN, buffer.order());
         assertEquals(0, buffer.writerIndex());
         return buffer;
     }
 
-    @Override
-    protected ByteBuf[] components() {
-        return new ByteBuf[] { buffer };
+    protected ByteBuf newDirectBuffer(int length, int maxCapacity) {
+        return new UnpooledDirectByteBuf(UnpooledByteBufAllocator.DEFAULT, length, maxCapacity);
     }
 
-    protected ByteBuf newDirectBuffer(int length) {
-        return new UnpooledDirectByteBuf(UnpooledByteBufAllocator.DEFAULT, length, Integer.MAX_VALUE);
+    @Test
+    public void testIsContiguous() {
+        ByteBuf buf = newBuffer(4);
+        assertTrue(buf.isContiguous());
+        buf.release();
     }
 }

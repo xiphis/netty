@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,15 +16,17 @@
 package io.netty.handler.codec.spdy;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
-import io.netty.util.ReferenceCountUtil;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SpdyHeaderBlockZlibDecoderTest {
 
@@ -42,20 +44,20 @@ public class SpdyHeaderBlockZlibDecoderTest {
     private SpdyHeaderBlockZlibDecoder decoder;
     private SpdyHeadersFrame frame;
 
-    @Before
+    @BeforeEach
     public void setUp() {
         decoder = new SpdyHeaderBlockZlibDecoder(SpdyVersion.SPDY_3_1, maxHeaderSize);
         frame = new DefaultSpdyHeadersFrame(1);
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         decoder.end();
     }
 
     @Test
     public void testHeaderBlock() throws Exception {
-        ByteBuf headerBlock = ReferenceCountUtil.releaseLater(Unpooled.buffer(37));
+        ByteBuf headerBlock = Unpooled.buffer(37);
         headerBlock.writeBytes(zlibHeader);
         headerBlock.writeByte(0); // Non-compressed block
         headerBlock.writeByte(0x15); // little-endian length (21)
@@ -68,7 +70,7 @@ public class SpdyHeaderBlockZlibDecoderTest {
         headerBlock.writeInt(5); // length of value
         headerBlock.writeBytes(valueBytes);
         headerBlock.writeBytes(zlibSyncFlush);
-        decoder.decode(headerBlock, frame);
+        decoder.decode(ByteBufAllocator.DEFAULT, headerBlock, frame);
         decoder.endHeaderBlock(frame);
 
         assertFalse(headerBlock.isReadable());
@@ -77,11 +79,13 @@ public class SpdyHeaderBlockZlibDecoderTest {
         assertTrue(frame.headers().contains(name));
         assertEquals(1, frame.headers().getAll(name).size());
         assertEquals(value, frame.headers().get(name));
+
+        headerBlock.release();
     }
 
     @Test
     public void testHeaderBlockMultipleDecodes() throws Exception {
-        ByteBuf headerBlock = ReferenceCountUtil.releaseLater(Unpooled.buffer(37));
+        ByteBuf headerBlock = Unpooled.buffer(37);
         headerBlock.writeBytes(zlibHeader);
         headerBlock.writeByte(0); // Non-compressed block
         headerBlock.writeByte(0x15); // little-endian length (21)
@@ -98,7 +102,7 @@ public class SpdyHeaderBlockZlibDecoderTest {
         int readableBytes = headerBlock.readableBytes();
         for (int i = 0; i < readableBytes; i++) {
             ByteBuf headerBlockSegment = headerBlock.slice(i, 1);
-            decoder.decode(headerBlockSegment, frame);
+            decoder.decode(ByteBufAllocator.DEFAULT, headerBlockSegment, frame);
             assertFalse(headerBlockSegment.isReadable());
         }
         decoder.endHeaderBlock(frame);
@@ -108,11 +112,13 @@ public class SpdyHeaderBlockZlibDecoderTest {
         assertTrue(frame.headers().contains(name));
         assertEquals(1, frame.headers().getAll(name).size());
         assertEquals(value, frame.headers().get(name));
+
+        headerBlock.release();
     }
 
     @Test
     public void testLargeHeaderName() throws Exception {
-        ByteBuf headerBlock = ReferenceCountUtil.releaseLater(Unpooled.buffer(8220));
+        ByteBuf headerBlock = Unpooled.buffer(8220);
         headerBlock.writeBytes(zlibHeader);
         headerBlock.writeByte(0); // Non-compressed block
         headerBlock.writeByte(0x0c); // little-endian length (8204)
@@ -126,18 +132,20 @@ public class SpdyHeaderBlockZlibDecoderTest {
         }
         headerBlock.writeInt(0); // length of value
         headerBlock.writeBytes(zlibSyncFlush);
-        decoder.decode(headerBlock, frame);
+        decoder.decode(ByteBufAllocator.DEFAULT, headerBlock, frame);
         decoder.endHeaderBlock(frame);
 
         assertFalse(headerBlock.isReadable());
         assertFalse(frame.isInvalid());
         assertFalse(frame.isTruncated());
         assertEquals(1, frame.headers().names().size());
+
+        headerBlock.release();
     }
 
     @Test
     public void testLargeHeaderValue() throws Exception {
-        ByteBuf headerBlock = ReferenceCountUtil.releaseLater(Unpooled.buffer(8220));
+        ByteBuf headerBlock = Unpooled.buffer(8220);
         headerBlock.writeBytes(zlibHeader);
         headerBlock.writeByte(0); // Non-compressed block
         headerBlock.writeByte(0x0c); // little-endian length (8204)
@@ -152,7 +160,7 @@ public class SpdyHeaderBlockZlibDecoderTest {
             headerBlock.writeByte('v');
         }
         headerBlock.writeBytes(zlibSyncFlush);
-        decoder.decode(headerBlock, frame);
+        decoder.decode(ByteBufAllocator.DEFAULT, headerBlock, frame);
         decoder.endHeaderBlock(frame);
 
         assertFalse(headerBlock.isReadable());
@@ -160,11 +168,13 @@ public class SpdyHeaderBlockZlibDecoderTest {
         assertFalse(frame.isTruncated());
         assertEquals(1, frame.headers().names().size());
         assertEquals(8191, frame.headers().get("n").length());
+
+        headerBlock.release();
     }
 
-    @Test(expected = SpdyProtocolException.class)
+    @Test
     public void testHeaderBlockExtraData() throws Exception {
-        ByteBuf headerBlock = ReferenceCountUtil.releaseLater(Unpooled.buffer(37));
+        final ByteBuf headerBlock = Unpooled.buffer(37);
         headerBlock.writeBytes(zlibHeader);
         headerBlock.writeByte(0); // Non-compressed block
         headerBlock.writeByte(0x15); // little-endian length (21)
@@ -181,12 +191,20 @@ public class SpdyHeaderBlockZlibDecoderTest {
         headerBlock.writeByte(0x03); // adler-32 checksum
         headerBlock.writeByte(0xc9); // adler-32 checksum
         headerBlock.writeByte(0); // Data following zlib stream
-        decoder.decode(headerBlock, frame);
+
+        assertThrows(SpdyProtocolException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                decoder.decode(ByteBufAllocator.DEFAULT, headerBlock, frame);
+            }
+        });
+
+        headerBlock.release();
     }
 
-    @Test(expected = SpdyProtocolException.class)
+    @Test
     public void testHeaderBlockInvalidDictionary() throws Exception {
-        ByteBuf headerBlock = ReferenceCountUtil.releaseLater(Unpooled.buffer(7));
+        final ByteBuf headerBlock = Unpooled.buffer(7);
         headerBlock.writeByte(0x78);
         headerBlock.writeByte(0x3f);
         headerBlock.writeByte(0x01); // Unknown dictionary
@@ -194,18 +212,34 @@ public class SpdyHeaderBlockZlibDecoderTest {
         headerBlock.writeByte(0x03); // Unknown dictionary
         headerBlock.writeByte(0x04); // Unknown dictionary
         headerBlock.writeByte(0); // Non-compressed block
-        decoder.decode(headerBlock, frame);
+
+        assertThrows(SpdyProtocolException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                decoder.decode(ByteBufAllocator.DEFAULT, headerBlock, frame);
+            }
+        });
+
+        headerBlock.release();
     }
 
-    @Test(expected = SpdyProtocolException.class)
+    @Test
     public void testHeaderBlockInvalidDeflateBlock() throws Exception {
-        ByteBuf headerBlock = ReferenceCountUtil.releaseLater(Unpooled.buffer(11));
+        final ByteBuf headerBlock = Unpooled.buffer(11);
         headerBlock.writeBytes(zlibHeader);
         headerBlock.writeByte(0); // Non-compressed block
         headerBlock.writeByte(0x00); // little-endian length (0)
         headerBlock.writeByte(0x00); // little-endian length (0)
         headerBlock.writeByte(0x00); // invalid one's compliment
         headerBlock.writeByte(0x00); // invalid one's compliment
-        decoder.decode(headerBlock, frame);
+
+        assertThrows(SpdyProtocolException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                decoder.decode(ByteBufAllocator.DEFAULT, headerBlock, frame);
+            }
+        });
+
+        headerBlock.release();
     }
 }

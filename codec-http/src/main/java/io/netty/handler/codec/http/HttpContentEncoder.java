@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -19,14 +19,17 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.handler.codec.DecoderResult;
 import io.netty.handler.codec.MessageToMessageCodec;
-import io.netty.handler.codec.http.HttpHeaders.Names;
-import io.netty.handler.codec.http.HttpHeaders.Values;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.internal.ObjectUtil;
+import io.netty.util.internal.StringUtil;
 
 import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Queue;
+
+import static io.netty.handler.codec.http.HttpHeaderNames.*;
 
 /**
  * Encodes the content of the outbound {@link HttpResponse} and {@link HttpContent}.
@@ -58,8 +61,11 @@ public abstract class HttpContentEncoder extends MessageToMessageCodec<HttpReque
         AWAIT_CONTENT
     }
 
-    private final Queue<String> acceptEncodingQueue = new ArrayDeque<String>();
-    private String acceptEncoding;
+    private static final CharSequence ZERO_LENGTH_HEAD = "HEAD";
+    private static final CharSequence ZERO_LENGTH_CONNECT = "CONNECT";
+    private static final int CONTINUE_CODE = HttpResponseStatus.CONTINUE.code();
+
+    private final Queue<CharSequence> acceptEncodingQueue = new ArrayDeque<CharSequence>();
     private EmbeddedChannel encoder;
     private State state = State.AWAIT_HEADERS;
 
@@ -69,13 +75,30 @@ public abstract class HttpContentEncoder extends MessageToMessageCodec<HttpReque
     }
 
     @Override
-    protected void decode(ChannelHandlerContext ctx, HttpRequest msg, List<Object> out)
-            throws Exception {
-        String acceptedEncoding = msg.headers().get(HttpHeaders.Names.ACCEPT_ENCODING);
-        if (acceptedEncoding == null) {
-            acceptedEncoding = HttpHeaders.Values.IDENTITY;
+    protected void decode(ChannelHandlerContext ctx, HttpRequest msg, List<Object> out) throws Exception {
+        CharSequence acceptEncoding;
+        List<String> acceptEncodingHeaders = msg.headers().getAll(ACCEPT_ENCODING);
+        switch (acceptEncodingHeaders.size()) {
+        case 0:
+            acceptEncoding = HttpContentDecoder.IDENTITY;
+            break;
+        case 1:
+            acceptEncoding = acceptEncodingHeaders.get(0);
+            break;
+        default:
+            // Multiple message-header fields https://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.2
+            acceptEncoding = StringUtil.join(",", acceptEncodingHeaders);
+            break;
         }
-        acceptEncodingQueue.add(acceptedEncoding);
+
+        HttpMethod method = msg.method();
+        if (HttpMethod.HEAD.equals(method)) {
+            acceptEncoding = ZERO_LENGTH_HEAD;
+        } else if (HttpMethod.CONNECT.equals(method)) {
+            acceptEncoding = ZERO_LENGTH_CONNECT;
+        }
+
+        acceptEncodingQueue.add(acceptEncoding);
         out.add(ReferenceCountUtil.retain(msg));
     }
 
@@ -88,26 +111,46 @@ public abstract class HttpContentEncoder extends MessageToMessageCodec<HttpReque
                 assert encoder == null;
 
                 final HttpResponse res = (HttpResponse) msg;
+                final int code = res.status().code();
+                final CharSequence acceptEncoding;
+                if (code == CONTINUE_CODE) {
+                    // We need to not poll the encoding when response with CONTINUE as another response will follow
+                    // for the issued request. See https://github.com/netty/netty/issues/4079
+                    acceptEncoding = null;
+                } else {
+                    // Get the list of encodings accepted by the peer.
+                    acceptEncoding = acceptEncodingQueue.poll();
+                    if (acceptEncoding == null) {
+                        throw new IllegalStateException("cannot send more responses than requests");
+                    }
+                }
 
-                if (res.status().code() == 100) {
+                /*
+                 * per rfc2616 4.3 Message Body
+                 * All 1xx (informational), 204 (no content), and 304 (not modified) responses MUST NOT include a
+                 * message-body. All other responses do include a message-body, although it MAY be of zero length.
+                 *
+                 * 9.4 HEAD
+                 * The HEAD method is identical to GET except that the server MUST NOT return a message-body
+                 * in the response.
+                 *
+                 * Also we should pass through HTTP/1.0 as transfer-encoding: chunked is not supported.
+                 *
+                 * See https://github.com/netty/netty/issues/5382
+                 */
+                if (isPassthru(res.protocolVersion(), code, acceptEncoding)) {
                     if (isFull) {
                         out.add(ReferenceCountUtil.retain(res));
                     } else {
-                        out.add(res);
+                        out.add(ReferenceCountUtil.retain(res));
                         // Pass through all following contents.
                         state = State.PASS_THROUGH;
                     }
                     break;
                 }
 
-                // Get the list of encodings accepted by the peer.
-                acceptEncoding = acceptEncodingQueue.poll();
-                if (acceptEncoding == null) {
-                    throw new IllegalStateException("cannot send more responses than requests");
-                }
-
                 if (isFull) {
-                    // Pass through the full response with empty content and continue waiting for the the next resp.
+                    // Pass through the full response with empty content and continue waiting for the next resp.
                     if (!((ByteBufHolder) res).content().isReadable()) {
                         out.add(ReferenceCountUtil.retain(res));
                         break;
@@ -115,14 +158,14 @@ public abstract class HttpContentEncoder extends MessageToMessageCodec<HttpReque
                 }
 
                 // Prepare to encode the content.
-                final Result result = beginEncode(res, acceptEncoding);
+                final Result result = beginEncode(res, acceptEncoding.toString());
 
                 // If unable to encode, pass through.
                 if (result == null) {
                     if (isFull) {
                         out.add(ReferenceCountUtil.retain(res));
                     } else {
-                        out.add(res);
+                        out.add(ReferenceCountUtil.retain(res));
                         // Pass through all following contents.
                         state = State.PASS_THROUGH;
                     }
@@ -133,11 +176,7 @@ public abstract class HttpContentEncoder extends MessageToMessageCodec<HttpReque
 
                 // Encode the content and remove or replace the existing headers
                 // so that the message looks like a decoded message.
-                res.headers().set(Names.CONTENT_ENCODING, result.targetContentEncoding());
-
-                // Make the response chunked to simplify content transformation.
-                res.headers().remove(Names.CONTENT_LENGTH);
-                res.headers().set(Names.TRANSFER_ENCODING, Values.CHUNKED);
+                res.headers().set(HttpHeaderNames.CONTENT_ENCODING, result.targetContentEncoding());
 
                 // Output the rewritten response.
                 if (isFull) {
@@ -145,9 +184,16 @@ public abstract class HttpContentEncoder extends MessageToMessageCodec<HttpReque
                     HttpResponse newRes = new DefaultHttpResponse(res.protocolVersion(), res.status());
                     newRes.headers().set(res.headers());
                     out.add(newRes);
-                    // Fall through to encode the content of the full response.
+
+                    ensureContent(res);
+                    encodeFullResponse(newRes, (HttpContent) res, out);
+                    break;
                 } else {
-                    out.add(res);
+                    // Make the response chunked to simplify content transformation.
+                    res.headers().remove(HttpHeaderNames.CONTENT_LENGTH);
+                    res.headers().set(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED);
+
+                    out.add(ReferenceCountUtil.retain(res));
                     state = State.AWAIT_CONTENT;
                     if (!(msg instanceof HttpContent)) {
                         // only break out the switch statement if we have not content to process
@@ -174,6 +220,31 @@ public abstract class HttpContentEncoder extends MessageToMessageCodec<HttpReque
                 break;
             }
         }
+    }
+
+    private void encodeFullResponse(HttpResponse newRes, HttpContent content, List<Object> out) {
+        int existingMessages = out.size();
+        encodeContent(content, out);
+
+        if (HttpUtil.isContentLengthSet(newRes)) {
+            // adjust the content-length header
+            int messageSize = 0;
+            for (int i = existingMessages; i < out.size(); i++) {
+                Object item = out.get(i);
+                if (item instanceof HttpContent) {
+                    messageSize += ((HttpContent) item).content().readableBytes();
+                }
+            }
+            HttpUtil.setContentLength(newRes, messageSize);
+        } else {
+            newRes.headers().set(HttpHeaderNames.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED);
+        }
+    }
+
+    private static boolean isPassthru(HttpVersion version, int code, CharSequence httpMethod) {
+        return code < 200 || code == 204 || code == 304 ||
+               (httpMethod == ZERO_LENGTH_HEAD || (httpMethod == ZERO_LENGTH_CONNECT && code == 200)) ||
+                version == HttpVersion.HTTP_1_0;
     }
 
     private static void ensureHeaders(HttpObject msg) {
@@ -207,7 +278,7 @@ public abstract class HttpContentEncoder extends MessageToMessageCodec<HttpReque
             if (headers.isEmpty()) {
                 out.add(LastHttpContent.EMPTY_LAST_CONTENT);
             } else {
-                out.add(new ComposedLastHttpContent(headers));
+                out.add(new ComposedLastHttpContent(headers, DecoderResult.SUCCESS));
             }
             return true;
         }
@@ -217,8 +288,8 @@ public abstract class HttpContentEncoder extends MessageToMessageCodec<HttpReque
     /**
      * Prepare to encode the HTTP message content.
      *
-     * @param headers
-     *        the headers
+     * @param httpResponse
+     *        the http response
      * @param acceptEncoding
      *        the value of the {@code "Accept-Encoding"} header
      *
@@ -228,35 +299,35 @@ public abstract class HttpContentEncoder extends MessageToMessageCodec<HttpReque
      *         {@code null} if {@code acceptEncoding} is unsupported or rejected
      *         and thus the content should be handled as-is (i.e. no encoding).
      */
-    protected abstract Result beginEncode(HttpResponse headers, String acceptEncoding) throws Exception;
+    protected abstract Result beginEncode(HttpResponse httpResponse, String acceptEncoding) throws Exception;
 
     @Override
     public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
-        cleanup();
+        cleanupSafely(ctx);
         super.handlerRemoved(ctx);
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        cleanup();
+        cleanupSafely(ctx);
         super.channelInactive(ctx);
     }
 
     private void cleanup() {
         if (encoder != null) {
             // Clean-up the previous encoder if not cleaned up correctly.
-            if (encoder.finish()) {
-                for (;;) {
-                    ByteBuf buf = encoder.readOutbound();
-                    if (buf == null) {
-                        break;
-                    }
-                    // Release the buffer
-                    // https://github.com/netty/netty/issues/1524
-                    buf.release();
-                }
-            }
+            encoder.finishAndReleaseAll();
             encoder = null;
+        }
+    }
+
+    private void cleanupSafely(ChannelHandlerContext ctx) {
+        try {
+            cleanup();
+        } catch (Throwable cause) {
+            // If cleanup throws any error we need to propagate it through the pipeline
+            // so we don't fail to propagate pipeline events.
+            ctx.fireExceptionCaught(cause);
         }
     }
 
@@ -292,15 +363,8 @@ public abstract class HttpContentEncoder extends MessageToMessageCodec<HttpReque
         private final EmbeddedChannel contentEncoder;
 
         public Result(String targetContentEncoding, EmbeddedChannel contentEncoder) {
-            if (targetContentEncoding == null) {
-                throw new NullPointerException("targetContentEncoding");
-            }
-            if (contentEncoder == null) {
-                throw new NullPointerException("contentEncoder");
-            }
-
-            this.targetContentEncoding = targetContentEncoding;
-            this.contentEncoder = contentEncoder;
+            this.targetContentEncoding = ObjectUtil.checkNotNull(targetContentEncoding, "targetContentEncoding");
+            this.contentEncoder = ObjectUtil.checkNotNull(contentEncoder, "contentEncoder");
         }
 
         public String targetContentEncoding() {

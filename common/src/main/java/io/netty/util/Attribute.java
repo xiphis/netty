@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -43,15 +43,28 @@ public interface Attribute<T> {
     T getAndSet(T value);
 
     /**
-     *  Atomically sets to the given value if this {@link Attribute} does not contain a value at the moment.
+     *  Atomically sets to the given value if this {@link Attribute}'s value is {@code null}.
      *  If it was not possible to set the value as it contains a value it will just return the current value.
      */
     T setIfAbsent(T value);
 
     /**
-     * Removes this attribute from the {@link AttributeMap} and returns the old value..  Subsequent {@link #get()}
-     * calls will return @{code null}.
+     * Removes this attribute from the {@link AttributeMap} and returns the old value. Subsequent {@link #get()}
+     * calls will return {@code null}.
+     *
+     * If you only want to return the old value and clear the {@link Attribute} while still keep it in the
+     * {@link AttributeMap} use {@link #getAndSet(Object)} with a value of {@code null}.
+     *
+     * <p>
+     * Be aware that even if you call this method another thread that has obtained a reference to this {@link Attribute}
+     * via {@link AttributeMap#attr(AttributeKey)} will still operate on the same instance. That said if now another
+     * thread or even the same thread later will call {@link AttributeMap#attr(AttributeKey)} again, a new
+     * {@link Attribute} instance is created and so is not the same as the previous one that was removed. Because of
+     * this special caution should be taken when you call {@link #remove()} or {@link #getAndRemove()}.
+     *
+     * @deprecated please consider using {@link #getAndSet(Object)} (with value of {@code null}).
      */
+    @Deprecated
     T getAndRemove();
 
     /**
@@ -61,7 +74,20 @@ public interface Attribute<T> {
     boolean compareAndSet(T oldValue, T newValue);
 
     /**
-     * Removes this attribute from the {@link AttributeMap}.  Subsequent {@link #get()} calls will return @{code null}.
+     * Removes this attribute from the {@link AttributeMap}. Subsequent {@link #get()} calls will return @{code null}.
+     *
+     * If you only want to remove the value and clear the {@link Attribute} while still keep it in
+     * {@link AttributeMap} use {@link #set(Object)} with a value of {@code null}.
+     *
+     * <p>
+     * Be aware that even if you call this method another thread that has obtained a reference to this {@link Attribute}
+     * via {@link AttributeMap#attr(AttributeKey)} will still operate on the same instance. That said if now another
+     * thread or even the same thread later will call {@link AttributeMap#attr(AttributeKey)} again, a new
+     * {@link Attribute} instance is created and so is not the same as the previous one that was removed. Because of
+     * this special caution should be taken when you call {@link #remove()} or {@link #getAndRemove()}.
+     *
+     * @deprecated please consider using {@link #set(Object)} (with value of {@code null}).
      */
+    @Deprecated
     void remove();
 }

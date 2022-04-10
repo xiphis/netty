@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -14,6 +14,8 @@
  * under the License.
  */
 package io.netty.handler.codec.xml;
+
+import static io.netty.util.internal.ObjectUtil.checkPositive;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
@@ -59,9 +61,15 @@ import java.util.List;
  * +-----------------+-------------------------------------+
  * </pre>
  *
+ * <p/>
+ * The byte stream is expected to be in UTF-8 character encoding or ASCII. The current implementation
+ * uses direct {@code byte} to {@code char} cast and then compares that {@code char} to a few low range
+ * ASCII characters like {@code '<'}, {@code '>'} or {@code '/'}. UTF-8 is not using low range [0..0x7F]
+ * byte values for multibyte codepoint representations therefore fully supported by this implementation.
+ * <p/>
  * Please note that this decoder is not suitable for
  * xml streaming protocols such as
- * <a href="http://xmpp.org/rfcs/rfc6120.html">XMPP</a>,
+ * <a href="https://xmpp.org/rfcs/rfc6120.html">XMPP</a>,
  * where an initial xml element opens the stream and only
  * gets closed at the end of the session, although this class
  * could probably allow for such type of message flow with
@@ -72,10 +80,7 @@ public class XmlFrameDecoder extends ByteToMessageDecoder {
     private final int maxFrameLength;
 
     public XmlFrameDecoder(int maxFrameLength) {
-        if (maxFrameLength < 1) {
-            throw new IllegalArgumentException("maxFrameLength must be a positive int");
-        }
-        this.maxFrameLength = maxFrameLength;
+        this.maxFrameLength = checkPositive(maxFrameLength, "maxFrameLength");
     }
 
     @Override
@@ -90,8 +95,8 @@ public class XmlFrameDecoder extends ByteToMessageDecoder {
 
         if (bufferLength > maxFrameLength) {
             // bufferLength exceeded maxFrameLength; dropping frame
-            fail(ctx, bufferLength);
             in.skipBytes(in.readableBytes());
+            fail(bufferLength);
             return;
         }
 
@@ -111,8 +116,16 @@ public class XmlFrameDecoder extends ByteToMessageDecoder {
                 if (i < bufferLength - 1) {
                     final byte peekAheadByte = in.getByte(i + 1);
                     if (peekAheadByte == '/') {
-                        // found </, decrementing openBracketsCount
-                        openBracketsCount--;
+                        // found </, we must check if it is enclosed
+                        int peekFurtherAheadIndex = i + 2;
+                        while (peekFurtherAheadIndex <= bufferLength - 1) {
+                            //if we have </ and enclosing > we can decrement openBracketsCount
+                            if (in.getByte(peekFurtherAheadIndex) == '>') {
+                                openBracketsCount--;
+                                break;
+                            }
+                            peekFurtherAheadIndex++;
+                        }
                     } else if (isValidStartCharForXmlElement(peekAheadByte)) {
                         atLeastOneXmlElementFound = true;
                         // char after < is a valid xml element start char,
@@ -166,27 +179,26 @@ public class XmlFrameDecoder extends ByteToMessageDecoder {
         }
 
         final int readerIndex = in.readerIndex();
+        int xmlElementLength = length - readerIndex;
 
-        if (openBracketsCount == 0 && length > 0) {
-            if (length >= bufferLength) {
-                length = in.readableBytes();
+        if (openBracketsCount == 0 && xmlElementLength > 0) {
+            if (readerIndex + xmlElementLength >= bufferLength) {
+                xmlElementLength = in.readableBytes();
             }
             final ByteBuf frame =
-                    extractFrame(in, readerIndex + leadingWhiteSpaceCount, length - leadingWhiteSpaceCount);
-            in.skipBytes(length);
+                    extractFrame(in, readerIndex + leadingWhiteSpaceCount, xmlElementLength - leadingWhiteSpaceCount);
+            in.skipBytes(xmlElementLength);
             out.add(frame);
         }
     }
 
-    private void fail(ChannelHandlerContext ctx, long frameLength) {
+    private void fail(long frameLength) {
         if (frameLength > 0) {
-            ctx.fireExceptionCaught(
-                    new TooLongFrameException(
-                            "frame length exceeds " + maxFrameLength + ": " + frameLength + " - discarded"));
+            throw new TooLongFrameException(
+                            "frame length exceeds " + maxFrameLength + ": " + frameLength + " - discarded");
         } else {
-            ctx.fireExceptionCaught(
-                    new TooLongFrameException(
-                            "frame length exceeds " + maxFrameLength + " - discarding"));
+            throw new TooLongFrameException(
+                            "frame length exceeds " + maxFrameLength + " - discarding");
         }
     }
 
@@ -203,7 +215,7 @@ public class XmlFrameDecoder extends ByteToMessageDecoder {
      * start char for an xml element name.
      * <p/>
      * Please refer to the
-     * <a href="http://www.w3.org/TR/2004/REC-xml11-20040204/#NT-NameStartChar">NameStartChar</a>
+     * <a href="https://www.w3.org/TR/2004/REC-xml11-20040204/#NT-NameStartChar">NameStartChar</a>
      * formal definition in the W3C XML spec for further info.
      *
      * @param b the input char

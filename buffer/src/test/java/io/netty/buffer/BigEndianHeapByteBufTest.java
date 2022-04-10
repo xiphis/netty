@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,36 +15,41 @@
  */
 package io.netty.buffer;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Tests big-endian heap channel buffers
  */
 public class BigEndianHeapByteBufTest extends AbstractByteBufTest {
 
-    private ByteBuf buffer;
-
     @Override
-    protected ByteBuf newBuffer(int length) {
-        buffer = Unpooled.buffer(length);
+    protected ByteBuf newBuffer(int length, int maxCapacity) {
+        ByteBuf buffer = Unpooled.buffer(length, maxCapacity);
         assertEquals(0, buffer.writerIndex());
         return buffer;
     }
 
-    @Override
-    protected ByteBuf[] components() {
-        return new ByteBuf[] { buffer };
-    }
-
-    @Test(expected = NullPointerException.class)
+    @Test
     public void shouldNotAllowNullInConstructor1() {
-        new UnpooledHeapByteBuf(null, new byte[1], 0);
+        assertThrows(NullPointerException.class, new Executable() {
+            @Override
+            public void execute() {
+                new UnpooledHeapByteBuf(null, new byte[1], 0);
+            }
+        });
     }
 
-    @Test(expected = NullPointerException.class)
+    @Test
     public void shouldNotAllowNullInConstructor2() {
-        new UnpooledHeapByteBuf(UnpooledByteBufAllocator.DEFAULT, null, 0);
+        assertThrows(NullPointerException.class, new Executable() {
+            @Override
+            public void execute() {
+                new UnpooledHeapByteBuf(UnpooledByteBufAllocator.DEFAULT, null, 0);
+            }
+        });
     }
 }

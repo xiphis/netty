@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,9 +15,12 @@
  */
 package io.netty.handler.codec.compression;
 
+/**
+ * Random numbers for decompress Bzip2 blocks.
+ */
 final class Bzip2Rand {
     /**
-     * The BZip2 specification originally included the optional addition of a slight pseudo-random
+     * The Bzip2 specification originally included the optional addition of a slight pseudo-random
      * perturbation to the input data, in order to work around the block sorting algorithm's non-
      * optimal performance on some types of input. The current mainline bzip2 does not require this
      * and will not create randomised blocks, but compatibility is still required for old data (and

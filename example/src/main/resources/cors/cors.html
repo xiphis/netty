@@ -6,7 +6,7 @@
         <link rel="stylesheet" href="css/cors.css">
     </head>
     <body onload="simpleGetRequest();">
-        <h1>Repsonse from Server</h1>
+        <h1>Response from Server</h1>
         <textarea id="responseText"></textarea>
         <script>
             function simpleGetRequest() {
@@ -30,7 +30,7 @@
                     return document.getElementById('responseText');
                 }
 
-                function appendTextArea(newData) {
+                function appendTextArea(newData) {  // lgtm[js/unused-local-variable]
                     var el = getTextAreaElement();
                     el.value = el.value + '\n' + newData;
                 }

@@ -1,11 +1,11 @@
 /*
- * Copyright 2012 The Netty Project
+ * Copyright 2019 The Netty Project
  *
  * The Netty Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -19,6 +19,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ReplayingDecoder;
 import io.netty.handler.codec.TooLongFrameException;
+import io.netty.util.internal.ObjectUtil;
 
 import java.util.List;
 
@@ -52,6 +53,17 @@ public class WebSocket00FrameDecoder extends ReplayingDecoder<Void> implements W
         this.maxFrameSize = maxFrameSize;
     }
 
+    /**
+     * Creates a new instance of {@code WebSocketFrameDecoder} with the specified {@code maxFrameSize}. If the client
+     * sends a frame size larger than {@code maxFrameSize}, the channel will be closed.
+     *
+     * @param decoderConfig
+     *            Frames decoder configuration.
+     */
+    public WebSocket00FrameDecoder(WebSocketDecoderConfig decoderConfig) {
+        this.maxFrameSize = ObjectUtil.checkNotNull(decoderConfig, "decoderConfig").maxFramePayloadLength();
+    }
+
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         // Discard all data received if closing handshake was received before.
@@ -62,12 +74,17 @@ public class WebSocket00FrameDecoder extends ReplayingDecoder<Void> implements W
 
         // Decode a frame otherwise.
         byte type = in.readByte();
+        WebSocketFrame frame;
         if ((type & 0x80) == 0x80) {
             // If the MSB on type is set, decode the frame length
-            out.add(decodeBinaryFrame(ctx, type, in));
+            frame = decodeBinaryFrame(ctx, type, in);
         } else {
             // Decode a 0xff terminated UTF-8 string
-            out.add(decodeTextFrame(ctx, in));
+            frame = decodeTextFrame(ctx, in);
+        }
+
+        if (frame != null) {
+            out.add(frame);
         }
     }
 
@@ -91,7 +108,7 @@ public class WebSocket00FrameDecoder extends ReplayingDecoder<Void> implements W
 
         if (type == (byte) 0xFF && frameSize == 0) {
             receivedClosingHandshake = true;
-            return new CloseWebSocketFrame();
+            return new CloseWebSocketFrame(true, 0, ctx.alloc().buffer(0));
         }
         ByteBuf payload = readBytes(ctx.alloc(), buffer, (int) frameSize);
         return new BinaryWebSocketFrame(payload);

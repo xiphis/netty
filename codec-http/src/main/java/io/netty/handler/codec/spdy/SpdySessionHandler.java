@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,24 +20,23 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
-import io.netty.util.internal.EmptyArrays;
+import io.netty.util.internal.ObjectUtil;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static io.netty.handler.codec.spdy.SpdyCodecUtil.*;
+import static io.netty.handler.codec.spdy.SpdyCodecUtil.SPDY_SESSION_STREAM_ID;
+import static io.netty.handler.codec.spdy.SpdyCodecUtil.isServerId;
+import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
 
 /**
  * Manages streams within a SPDY session.
  */
 public class SpdySessionHandler extends ChannelDuplexHandler {
 
-    private static final SpdyProtocolException PROTOCOL_EXCEPTION = new SpdyProtocolException();
-    private static final SpdyProtocolException STREAM_CLOSED = new SpdyProtocolException("Stream closed");
-
-    static {
-        PROTOCOL_EXCEPTION.setStackTrace(EmptyArrays.EMPTY_STACK_TRACE);
-        STREAM_CLOSED.setStackTrace(EmptyArrays.EMPTY_STACK_TRACE);
-    }
+    private static final SpdyProtocolException PROTOCOL_EXCEPTION =
+            SpdyProtocolException.newStatic(null, SpdySessionHandler.class, "handleOutboundMessage(...)");
+    private static final SpdyProtocolException STREAM_CLOSED =
+            SpdyProtocolException.newStatic("Stream closed", SpdySessionHandler.class, "removeStream(...)");
 
     private static final int DEFAULT_WINDOW_SIZE = 64 * 1024; // 64 KB default initial window size
     private int initialSendWindowSize    = DEFAULT_WINDOW_SIZE;
@@ -50,8 +49,6 @@ public class SpdySessionHandler extends ChannelDuplexHandler {
     private static final int DEFAULT_MAX_CONCURRENT_STREAMS = Integer.MAX_VALUE;
     private int remoteConcurrentStreams = DEFAULT_MAX_CONCURRENT_STREAMS;
     private int localConcurrentStreams  = DEFAULT_MAX_CONCURRENT_STREAMS;
-
-    private final Object flowControlLock = new Object();
 
     private final AtomicInteger pings = new AtomicInteger();
 
@@ -73,24 +70,19 @@ public class SpdySessionHandler extends ChannelDuplexHandler {
      *                handle the client endpoint of the connection.
      */
     public SpdySessionHandler(SpdyVersion version, boolean server) {
-        if (version == null) {
-            throw new NullPointerException("version");
-        }
+        this.minorVersion = ObjectUtil.checkNotNull(version, "version").getMinorVersion();
         this.server = server;
-        minorVersion = version.getMinorVersion();
     }
 
     public void setSessionReceiveWindowSize(int sessionReceiveWindowSize) {
-      if (sessionReceiveWindowSize < 0) {
-        throw new IllegalArgumentException("sessionReceiveWindowSize");
-      }
-      // This will not send a window update frame immediately.
-      // If this value increases the allowed receive window size,
-      // a WINDOW_UPDATE frame will be sent when only half of the
-      // session window size remains during data frame processing.
-      // If this value decreases the allowed receive window size,
-      // the window will be reduced as data frames are processed.
-      initialSessionReceiveWindowSize = sessionReceiveWindowSize;
+        checkPositiveOrZero(sessionReceiveWindowSize, "sessionReceiveWindowSize");
+        // This will not send a window update frame immediately.
+        // If this value increases the allowed receive window size,
+        // a WINDOW_UPDATE frame will be sent when only half of the
+        // session window size remains during data frame processing.
+        // If this value decreases the allowed receive window size,
+        // the window will be reduced as data frames are processed.
+        initialSessionReceiveWindowSize = sessionReceiveWindowSize;
     }
 
     @Override
@@ -192,8 +184,8 @@ public class SpdySessionHandler extends ChannelDuplexHandler {
             // Send data frames upstream in initialReceiveWindowSize chunks
             if (newWindowSize < 0) {
                 while (spdyDataFrame.content().readableBytes() > initialReceiveWindowSize) {
-                    SpdyDataFrame partialDataFrame = new DefaultSpdyDataFrame(streamId,
-                            spdyDataFrame.content().readSlice(initialReceiveWindowSize).retain());
+                    SpdyDataFrame partialDataFrame = new DefaultSpdyDataFrame(
+                            streamId, spdyDataFrame.content().readRetainedSlice(initialReceiveWindowSize));
                     ctx.writeAndFlush(partialDataFrame);
                 }
             }
@@ -420,7 +412,7 @@ public class SpdySessionHandler extends ChannelDuplexHandler {
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        for (Integer streamId: spdySession.getActiveStreams()) {
+        for (Integer streamId: spdySession.activeStreams().keySet()) {
             removeStream(streamId, ctx.newSucceededFuture());
         }
         ctx.fireChannelInactive();
@@ -484,57 +476,55 @@ public class SpdySessionHandler extends ChannelDuplexHandler {
              * sender must pause transmitting data frames.
              */
 
-            synchronized (flowControlLock) {
-                int dataLength = spdyDataFrame.content().readableBytes();
-                int sendWindowSize = spdySession.getSendWindowSize(streamId);
-                int sessionSendWindowSize = spdySession.getSendWindowSize(SPDY_SESSION_STREAM_ID);
-                sendWindowSize = Math.min(sendWindowSize, sessionSendWindowSize);
+            int dataLength = spdyDataFrame.content().readableBytes();
+            int sendWindowSize = spdySession.getSendWindowSize(streamId);
+            int sessionSendWindowSize = spdySession.getSendWindowSize(SPDY_SESSION_STREAM_ID);
+            sendWindowSize = Math.min(sendWindowSize, sessionSendWindowSize);
 
-                if (sendWindowSize <= 0) {
-                    // Stream is stalled -- enqueue Data frame and return
-                    spdySession.putPendingWrite(streamId, new SpdySession.PendingWrite(spdyDataFrame, promise));
-                    return;
-                } else if (sendWindowSize < dataLength) {
-                    // Stream is not stalled but we cannot send the entire frame
-                    spdySession.updateSendWindowSize(streamId, -1 * sendWindowSize);
-                    spdySession.updateSendWindowSize(SPDY_SESSION_STREAM_ID, -1 * sendWindowSize);
+            if (sendWindowSize <= 0) {
+                // Stream is stalled -- enqueue Data frame and return
+                spdySession.putPendingWrite(streamId, new SpdySession.PendingWrite(spdyDataFrame, promise));
+                return;
+            } else if (sendWindowSize < dataLength) {
+                // Stream is not stalled but we cannot send the entire frame
+                spdySession.updateSendWindowSize(streamId, -1 * sendWindowSize);
+                spdySession.updateSendWindowSize(SPDY_SESSION_STREAM_ID, -1 * sendWindowSize);
 
-                    // Create a partial data frame whose length is the current window size
-                    SpdyDataFrame partialDataFrame = new DefaultSpdyDataFrame(streamId,
-                            spdyDataFrame.content().readSlice(sendWindowSize).retain());
+                // Create a partial data frame whose length is the current window size
+                SpdyDataFrame partialDataFrame = new DefaultSpdyDataFrame(
+                        streamId, spdyDataFrame.content().readRetainedSlice(sendWindowSize));
 
-                    // Enqueue the remaining data (will be the first frame queued)
-                    spdySession.putPendingWrite(streamId, new SpdySession.PendingWrite(spdyDataFrame, promise));
+                // Enqueue the remaining data (will be the first frame queued)
+                spdySession.putPendingWrite(streamId, new SpdySession.PendingWrite(spdyDataFrame, promise));
 
-                    // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the session on write failures that leave the transfer window in a corrupt state.
-                    final ChannelHandlerContext context = ctx;
-                    ctx.write(partialDataFrame).addListener(new ChannelFutureListener() {
-                        @Override
-                        public void operationComplete(ChannelFuture future) throws Exception {
-                            if (!future.isSuccess()) {
-                                issueSessionError(context, SpdySessionStatus.INTERNAL_ERROR);
-                            }
+                // The transfer window size is pre-decremented when sending a data frame downstream.
+                // Close the session on write failures that leave the transfer window in a corrupt state.
+                final ChannelHandlerContext context = ctx;
+                ctx.write(partialDataFrame).addListener(new ChannelFutureListener() {
+                    @Override
+                    public void operationComplete(ChannelFuture future) throws Exception {
+                        if (!future.isSuccess()) {
+                            issueSessionError(context, SpdySessionStatus.INTERNAL_ERROR);
                         }
-                    });
-                    return;
-                } else {
-                    // Window size is large enough to send entire data frame
-                    spdySession.updateSendWindowSize(streamId, -1 * dataLength);
-                    spdySession.updateSendWindowSize(SPDY_SESSION_STREAM_ID, -1 * dataLength);
+                    }
+                });
+                return;
+            } else {
+                // Window size is large enough to send entire data frame
+                spdySession.updateSendWindowSize(streamId, -1 * dataLength);
+                spdySession.updateSendWindowSize(SPDY_SESSION_STREAM_ID, -1 * dataLength);
 
-                    // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the session on write failures that leave the transfer window in a corrupt state.
-                    final ChannelHandlerContext context = ctx;
-                    promise.addListener(new ChannelFutureListener() {
-                        @Override
-                        public void operationComplete(ChannelFuture future) throws Exception {
-                            if (!future.isSuccess()) {
-                                issueSessionError(context, SpdySessionStatus.INTERNAL_ERROR);
-                            }
+                // The transfer window size is pre-decremented when sending a data frame downstream.
+                // Close the session on write failures that leave the transfer window in a corrupt state.
+                final ChannelHandlerContext context = ctx;
+                promise.addListener(new ChannelFutureListener() {
+                    @Override
+                    public void operationComplete(ChannelFuture future) throws Exception {
+                        if (!future.isSuccess()) {
+                            issueSessionError(context, SpdySessionStatus.INTERNAL_ERROR);
                         }
-                    });
-                }
+                    }
+                });
             }
 
             // Close the local side of the stream if this is the last frame
@@ -703,21 +693,21 @@ public class SpdySessionHandler extends ChannelDuplexHandler {
     }
 
     // need to synchronize to prevent new streams from being created while updating active streams
-    private synchronized void updateInitialSendWindowSize(int newInitialWindowSize) {
+    private void updateInitialSendWindowSize(int newInitialWindowSize) {
         int deltaWindowSize = newInitialWindowSize - initialSendWindowSize;
         initialSendWindowSize = newInitialWindowSize;
         spdySession.updateAllSendWindowSizes(deltaWindowSize);
     }
 
     // need to synchronize to prevent new streams from being created while updating active streams
-    private synchronized void updateInitialReceiveWindowSize(int newInitialWindowSize) {
+    private void updateInitialReceiveWindowSize(int newInitialWindowSize) {
         int deltaWindowSize = newInitialWindowSize - initialReceiveWindowSize;
         initialReceiveWindowSize = newInitialWindowSize;
         spdySession.updateAllReceiveWindowSizes(deltaWindowSize);
     }
 
     // need to synchronize accesses to sentGoAwayFrame, lastGoodStreamId, and initial window sizes
-    private synchronized boolean acceptStream(
+    private boolean acceptStream(
             int streamId, byte priority, boolean remoteSideClosed, boolean localSideClosed) {
         // Cannot initiate any new streams after receiving or sending GOAWAY
         if (receivedGoAwayFrame || sentGoAwayFrame) {
@@ -758,72 +748,64 @@ public class SpdySessionHandler extends ChannelDuplexHandler {
     }
 
     private void updateSendWindowSize(final ChannelHandlerContext ctx, int streamId, int deltaWindowSize) {
-        synchronized (flowControlLock) {
-            int newWindowSize = spdySession.updateSendWindowSize(streamId, deltaWindowSize);
-            if (streamId != SPDY_SESSION_STREAM_ID) {
-                int sessionSendWindowSize = spdySession.getSendWindowSize(SPDY_SESSION_STREAM_ID);
-                newWindowSize = Math.min(newWindowSize, sessionSendWindowSize);
+        spdySession.updateSendWindowSize(streamId, deltaWindowSize);
+
+        while (true) {
+            // Check if we have unblocked a stalled stream
+            SpdySession.PendingWrite pendingWrite = spdySession.getPendingWrite(streamId);
+            if (pendingWrite == null) {
+                return;
             }
 
-            while (newWindowSize > 0) {
-                // Check if we have unblocked a stalled stream
-                SpdySession.PendingWrite pendingWrite = spdySession.getPendingWrite(streamId);
-                if (pendingWrite == null) {
-                    break;
-                }
+            SpdyDataFrame spdyDataFrame = pendingWrite.spdyDataFrame;
+            int dataFrameSize = spdyDataFrame.content().readableBytes();
+            int writeStreamId = spdyDataFrame.streamId();
+            int sendWindowSize = spdySession.getSendWindowSize(writeStreamId);
+            int sessionSendWindowSize = spdySession.getSendWindowSize(SPDY_SESSION_STREAM_ID);
+            sendWindowSize = Math.min(sendWindowSize, sessionSendWindowSize);
 
-                SpdyDataFrame spdyDataFrame = pendingWrite.spdyDataFrame;
-                int dataFrameSize = spdyDataFrame.content().readableBytes();
-                int writeStreamId = spdyDataFrame.streamId();
-                if (streamId == SPDY_SESSION_STREAM_ID) {
-                    newWindowSize = Math.min(newWindowSize, spdySession.getSendWindowSize(writeStreamId));
-                }
+            if (sendWindowSize <= 0) {
+                return;
+            } else if (sendWindowSize < dataFrameSize) {
+                // We can send a partial frame
+                spdySession.updateSendWindowSize(writeStreamId, -1 * sendWindowSize);
+                spdySession.updateSendWindowSize(SPDY_SESSION_STREAM_ID, -1 * sendWindowSize);
 
-                if (newWindowSize >= dataFrameSize) {
-                    // Window size is large enough to send entire data frame
-                    spdySession.removePendingWrite(writeStreamId);
-                    newWindowSize = spdySession.updateSendWindowSize(writeStreamId, -1 * dataFrameSize);
-                    int sessionSendWindowSize =
-                            spdySession.updateSendWindowSize(SPDY_SESSION_STREAM_ID, -1 * dataFrameSize);
-                    newWindowSize = Math.min(newWindowSize, sessionSendWindowSize);
+                // Create a partial data frame whose length is the current window size
+                SpdyDataFrame partialDataFrame = new DefaultSpdyDataFrame(
+                        writeStreamId, spdyDataFrame.content().readRetainedSlice(sendWindowSize));
 
-                    // Close the local side of the stream if this is the last frame
-                    if (spdyDataFrame.isLast()) {
-                        halfCloseStream(writeStreamId, false, pendingWrite.promise);
+                // The transfer window size is pre-decremented when sending a data frame downstream.
+                // Close the session on write failures that leave the transfer window in a corrupt state.
+                ctx.writeAndFlush(partialDataFrame).addListener(new ChannelFutureListener() {
+                    @Override
+                    public void operationComplete(ChannelFuture future) throws Exception {
+                        if (!future.isSuccess()) {
+                            issueSessionError(ctx, SpdySessionStatus.INTERNAL_ERROR);
+                        }
                     }
+                });
+            } else {
+                // Window size is large enough to send entire data frame
+                spdySession.removePendingWrite(writeStreamId);
+                spdySession.updateSendWindowSize(writeStreamId, -1 * dataFrameSize);
+                spdySession.updateSendWindowSize(SPDY_SESSION_STREAM_ID, -1 * dataFrameSize);
 
-                    // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the session on write failures that leave the transfer window in a corrupt state.
-                    ctx.writeAndFlush(spdyDataFrame, pendingWrite.promise).addListener(new ChannelFutureListener() {
-                        @Override
-                        public void operationComplete(ChannelFuture future) throws Exception {
-                            if (!future.isSuccess()) {
-                                issueSessionError(ctx, SpdySessionStatus.INTERNAL_ERROR);
-                            }
-                        }
-                    });
-                } else {
-                    // We can send a partial frame
-                    spdySession.updateSendWindowSize(writeStreamId, -1 * newWindowSize);
-                    spdySession.updateSendWindowSize(SPDY_SESSION_STREAM_ID, -1 * newWindowSize);
-
-                    // Create a partial data frame whose length is the current window size
-                    SpdyDataFrame partialDataFrame = new DefaultSpdyDataFrame(writeStreamId,
-                            spdyDataFrame.content().readSlice(newWindowSize).retain());
-
-                    // The transfer window size is pre-decremented when sending a data frame downstream.
-                    // Close the session on write failures that leave the transfer window in a corrupt state.
-                    ctx.writeAndFlush(partialDataFrame).addListener(new ChannelFutureListener() {
-                        @Override
-                        public void operationComplete(ChannelFuture future) throws Exception {
-                            if (!future.isSuccess()) {
-                                issueSessionError(ctx, SpdySessionStatus.INTERNAL_ERROR);
-                            }
-                        }
-                    });
-
-                    newWindowSize = 0;
+                // Close the local side of the stream if this is the last frame
+                if (spdyDataFrame.isLast()) {
+                    halfCloseStream(writeStreamId, false, pendingWrite.promise);
                 }
+
+                // The transfer window size is pre-decremented when sending a data frame downstream.
+                // Close the session on write failures that leave the transfer window in a corrupt state.
+                ctx.writeAndFlush(spdyDataFrame, pendingWrite.promise).addListener(new ChannelFutureListener() {
+                    @Override
+                    public void operationComplete(ChannelFuture future) throws Exception {
+                        if (!future.isSuccess()) {
+                            issueSessionError(ctx, SpdySessionStatus.INTERNAL_ERROR);
+                        }
+                    }
+                });
             }
         }
     }
@@ -844,7 +826,7 @@ public class SpdySessionHandler extends ChannelDuplexHandler {
         // FIXME: Close the connection forcibly after timeout.
     }
 
-    private synchronized ChannelFuture sendGoAwayFrame(
+    private ChannelFuture sendGoAwayFrame(
             ChannelHandlerContext ctx, SpdySessionStatus status) {
         if (!sentGoAwayFrame) {
             sentGoAwayFrame = true;

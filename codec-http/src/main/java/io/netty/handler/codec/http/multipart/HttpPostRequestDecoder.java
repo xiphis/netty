@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,8 +18,10 @@ package io.netty.handler.codec.http.multipart;
 import io.netty.handler.codec.DecoderException;
 import io.netty.handler.codec.http.HttpConstants;
 import io.netty.handler.codec.http.HttpContent;
-import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpRequest;
+import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.StringUtil;
 
 import java.nio.charset.Charset;
@@ -82,15 +84,10 @@ public class HttpPostRequestDecoder implements InterfaceHttpPostRequestDecoder {
      *             errors
      */
     public HttpPostRequestDecoder(HttpDataFactory factory, HttpRequest request, Charset charset) {
-        if (factory == null) {
-            throw new NullPointerException("factory");
-        }
-        if (request == null) {
-            throw new NullPointerException("request");
-        }
-        if (charset == null) {
-            throw new NullPointerException("charset");
-        }
+        ObjectUtil.checkNotNull(factory, "factory");
+        ObjectUtil.checkNotNull(request, "request");
+        ObjectUtil.checkNotNull(charset, "charset");
+
         // Fill default values
         if (isMultipart(request)) {
             decoder = new HttpPostMultipartRequestDecoder(factory, request, charset);
@@ -139,11 +136,11 @@ public class HttpPostRequestDecoder implements InterfaceHttpPostRequestDecoder {
      * @return True if the request is a Multipart request
      */
     public static boolean isMultipart(HttpRequest request) {
-        if (request.headers().contains(HttpHeaders.Names.CONTENT_TYPE)) {
-            return getMultipartDataBoundary(request.headers().get(HttpHeaders.Names.CONTENT_TYPE)) != null;
-        } else {
-            return false;
+        String mimeType = request.headers().get(HttpHeaderNames.CONTENT_TYPE);
+        if (mimeType != null && mimeType.startsWith(HttpHeaderValues.MULTIPART_FORM_DATA.toString())) {
+            return getMultipartDataBoundary(mimeType) != null;
         }
+        return false;
     }
 
     /**
@@ -154,40 +151,39 @@ public class HttpPostRequestDecoder implements InterfaceHttpPostRequestDecoder {
     protected static String[] getMultipartDataBoundary(String contentType) {
         // Check if Post using "multipart/form-data; boundary=--89421926422648 [; charset=xxx]"
         String[] headerContentType = splitHeaderContentType(contentType);
-        if (headerContentType[0].toLowerCase().startsWith(
-                HttpHeaders.Values.MULTIPART_FORM_DATA)) {
+        final String multiPartHeader = HttpHeaderValues.MULTIPART_FORM_DATA.toString();
+        if (headerContentType[0].regionMatches(true, 0, multiPartHeader, 0 , multiPartHeader.length())) {
             int mrank;
             int crank;
-            if (headerContentType[1].toLowerCase().startsWith(
-                    HttpHeaders.Values.BOUNDARY)) {
+            final String boundaryHeader = HttpHeaderValues.BOUNDARY.toString();
+            if (headerContentType[1].regionMatches(true, 0, boundaryHeader, 0, boundaryHeader.length())) {
                 mrank = 1;
                 crank = 2;
-            } else if (headerContentType[2].toLowerCase().startsWith(
-                    HttpHeaders.Values.BOUNDARY)) {
+            } else if (headerContentType[2].regionMatches(true, 0, boundaryHeader, 0, boundaryHeader.length())) {
                 mrank = 2;
                 crank = 1;
             } else {
                 return null;
             }
-            String[] boundary = StringUtil.split(headerContentType[mrank], '=');
-            if (boundary.length != 2) {
+            String boundary = StringUtil.substringAfter(headerContentType[mrank], '=');
+            if (boundary == null) {
                 throw new ErrorDataDecoderException("Needs a boundary value");
             }
-            if (boundary[1].charAt(0) == '"') {
-                String bound = boundary[1].trim();
+            if (boundary.charAt(0) == '"') {
+                String bound = boundary.trim();
                 int index = bound.length() - 1;
                 if (bound.charAt(index) == '"') {
-                    boundary[1] = bound.substring(1, index);
+                    boundary = bound.substring(1, index);
                 }
             }
-            if (headerContentType[crank].toLowerCase().startsWith(
-                    HttpHeaders.Values.CHARSET)) {
-                String[] charset = StringUtil.split(headerContentType[crank], '=');
-                if (charset.length > 1) {
-                    return new String[] {"--" + boundary[1], charset[1]};
+            final String charsetHeader = HttpHeaderValues.CHARSET.toString();
+            if (headerContentType[crank].regionMatches(true, 0, charsetHeader, 0, charsetHeader.length())) {
+                String charset = StringUtil.substringAfter(headerContentType[crank], '=');
+                if (charset != null) {
+                    return new String[] {"--" + boundary, charset};
                 }
             }
-            return new String[] {"--" + boundary[1]};
+            return new String[] {"--" + boundary};
         }
         return null;
     }
@@ -235,6 +231,11 @@ public class HttpPostRequestDecoder implements InterfaceHttpPostRequestDecoder {
     @Override
     public InterfaceHttpData next() {
         return decoder.next();
+    }
+
+    @Override
+    public InterfaceHttpData currentPartialHttpData() {
+        return decoder.currentPartialHttpData();
     }
 
     @Override

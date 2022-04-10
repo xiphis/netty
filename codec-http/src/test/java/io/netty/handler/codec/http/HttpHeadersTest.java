@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,22 +15,28 @@
  */
 package io.netty.handler.codec.http;
 
-import io.netty.handler.codec.AsciiString;
-import org.junit.Test;
+import io.netty.util.AsciiString;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 import java.util.List;
 
-import static org.hamcrest.CoreMatchers.*;
-import static org.junit.Assert.*;
+import static io.netty.handler.codec.http.HttpHeadersTestUtils.of;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class HttpHeadersTest {
 
     @Test
     public void testRemoveTransferEncodingIgnoreCase() {
         HttpMessage message = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-        message.headers().set(HttpHeaders.Names.TRANSFER_ENCODING, "Chunked");
+        message.headers().set(HttpHeaderNames.TRANSFER_ENCODING, "Chunked");
         assertFalse(message.headers().isEmpty());
-        HttpHeaders.removeTransferEncodingChunked(message);
+        HttpUtil.setTransferEncodingChunked(message, false);
         assertTrue(message.headers().isEmpty());
     }
 
@@ -38,22 +44,63 @@ public class HttpHeadersTest {
     @Test
     public void testGetOperations() {
         HttpHeaders headers = new DefaultHttpHeaders();
-        headers.add("Foo", "1");
-        headers.add("Foo", "2");
+        headers.add(of("Foo"), of("1"));
+        headers.add(of("Foo"), of("2"));
 
-        assertEquals("1", headers.get("Foo"));
+        assertEquals("1", headers.get(of("Foo")));
 
-        List<String> values = headers.getAll("Foo");
+        List<String> values = headers.getAll(of("Foo"));
         assertEquals(2, values.size());
         assertEquals("1", values.get(0));
         assertEquals("2", values.get(1));
     }
 
     @Test
-    public void testEquansIgnoreCase() {
-        assertThat(AsciiString.equalsIgnoreCase(null, null), is(true));
-        assertThat(AsciiString.equalsIgnoreCase(null, "foo"), is(false));
-        assertThat(AsciiString.equalsIgnoreCase("bar", null), is(false));
-        assertThat(AsciiString.equalsIgnoreCase("FoO", "fOo"), is(true));
+    public void testEqualsIgnoreCase() {
+        assertThat(AsciiString.contentEqualsIgnoreCase(null, null), is(true));
+        assertThat(AsciiString.contentEqualsIgnoreCase(null, "foo"), is(false));
+        assertThat(AsciiString.contentEqualsIgnoreCase("bar", null), is(false));
+        assertThat(AsciiString.contentEqualsIgnoreCase("FoO", "fOo"), is(true));
+    }
+
+    @Test
+    public void testSetNullHeaderValueValidate() {
+        final HttpHeaders headers = new DefaultHttpHeaders(true);
+        assertThrows(NullPointerException.class, new Executable() {
+            @Override
+            public void execute() {
+                headers.set(of("test"), (CharSequence) null);
+            }
+        });
+    }
+
+    @Test
+    public void testSetNullHeaderValueNotValidate() {
+        final HttpHeaders headers = new DefaultHttpHeaders(false);
+        assertThrows(NullPointerException.class, new Executable() {
+            @Override
+            public void execute() {
+                headers.set(of("test"), (CharSequence) null);
+            }
+        });
+    }
+
+    @Test
+    public void testAddSelf() {
+        final HttpHeaders headers = new DefaultHttpHeaders(false);
+        assertThrows(IllegalArgumentException.class, new Executable() {
+            @Override
+            public void execute() {
+                headers.add(headers);
+            }
+        });
+    }
+
+    @Test
+    public void testSetSelfIsNoOp() {
+        HttpHeaders headers = new DefaultHttpHeaders(false);
+        headers.add("name", "value");
+        headers.set(headers);
+        assertEquals(1, headers.size());
     }
 }

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,13 +20,16 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
 import io.netty.buffer.Unpooled;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 
-import static org.hamcrest.CoreMatchers.*;
-import static org.junit.Assert.*;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.CoreMatchers.sameInstance;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SuppressWarnings("DynamicRegexReplaceableByCompiledPattern")
 public class DefaultChannelIdTest {
@@ -39,7 +42,7 @@ public class DefaultChannelIdTest {
     @Test
     public void testLongText() {
         String text = DefaultChannelId.newInstance().asLongText();
-        assertTrue(text.matches("^[0-9a-f]{16}-[0-9a-f]{4}-[0-9a-f]{8}-[0-9a-f]{16}-[0-9a-f]{8}$"));
+        assertTrue(text.matches("^[0-9a-f]{16}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{16}-[0-9a-f]{8}$"));
     }
 
     @Test
@@ -63,11 +66,19 @@ public class DefaultChannelIdTest {
 
         ByteBuf buf = Unpooled.buffer();
         ObjectOutputStream out = new ObjectOutputStream(new ByteBufOutputStream(buf));
-        out.writeObject(a);
-        out.flush();
+        try {
+            out.writeObject(a);
+            out.flush();
+        } finally {
+            out.close();
+        }
 
-        ObjectInputStream in = new ObjectInputStream(new ByteBufInputStream(buf));
-        b = (ChannelId) in.readObject();
+        ObjectInputStream in = new ObjectInputStream(new ByteBufInputStream(buf, true));
+        try {
+            b = (ChannelId) in.readObject();
+        } finally {
+            in.close();
+        }
 
         assertThat(a, is(b));
         assertThat(a, is(not(sameInstance(b))));

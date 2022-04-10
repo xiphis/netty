@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -120,7 +120,7 @@ public enum HAProxyProxiedProtocol {
      */
     public enum AddressFamily {
         /**
-         * The UNSPECIFIED address family represents a connection which was forwarded for an unkown protocol.
+         * The UNSPECIFIED address family represents a connection which was forwarded for an unknown protocol.
          */
         AF_UNSPEC(AF_UNSPEC_BYTE),
         /**
@@ -184,7 +184,7 @@ public enum HAProxyProxiedProtocol {
      */
     public enum TransportProtocol {
         /**
-         * The UNSPEC transport protocol represents a connection which was forwarded for an unkown protocol.
+         * The UNSPEC transport protocol represents a connection which was forwarded for an unknown protocol.
          */
         UNSPEC(TRANSPORT_UNSPEC_BYTE),
         /**

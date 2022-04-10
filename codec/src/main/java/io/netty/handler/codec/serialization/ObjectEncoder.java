@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -42,11 +42,19 @@ public class ObjectEncoder extends MessageToByteEncoder<Serializable> {
         int startIdx = out.writerIndex();
 
         ByteBufOutputStream bout = new ByteBufOutputStream(out);
-        bout.write(LENGTH_PLACEHOLDER);
-        ObjectOutputStream oout = new CompactObjectOutputStream(bout);
-        oout.writeObject(msg);
-        oout.flush();
-        oout.close();
+        ObjectOutputStream oout = null;
+        try {
+            bout.write(LENGTH_PLACEHOLDER);
+            oout = new CompactObjectOutputStream(bout);
+            oout.writeObject(msg);
+            oout.flush();
+        } finally {
+            if (oout != null) {
+                oout.close();
+            } else {
+                bout.close();
+            }
+        }
 
         int endIdx = out.writerIndex();
 

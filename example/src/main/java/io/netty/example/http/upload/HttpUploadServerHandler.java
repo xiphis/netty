@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -21,12 +21,12 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.handler.codec.http.Cookie;
-import io.netty.handler.codec.http.CookieDecoder;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpContent;
-import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpUtil;
+import io.netty.handler.codec.http.HttpHeaderValues;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpObject;
 import io.netty.handler.codec.http.HttpRequest;
@@ -34,12 +34,15 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.handler.codec.http.QueryStringDecoder;
-import io.netty.handler.codec.http.ServerCookieEncoder;
+import io.netty.handler.codec.http.cookie.Cookie;
+import io.netty.handler.codec.http.cookie.ServerCookieDecoder;
+import io.netty.handler.codec.http.cookie.ServerCookieEncoder;
 import io.netty.handler.codec.http.multipart.Attribute;
 import io.netty.handler.codec.http.multipart.DefaultHttpDataFactory;
 import io.netty.handler.codec.http.multipart.DiskAttribute;
 import io.netty.handler.codec.http.multipart.DiskFileUpload;
 import io.netty.handler.codec.http.multipart.FileUpload;
+import io.netty.handler.codec.http.multipart.HttpData;
 import io.netty.handler.codec.http.multipart.HttpDataFactory;
 import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder;
 import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder.EndOfDataDecoderException;
@@ -59,7 +62,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import static io.netty.buffer.Unpooled.*;
-import static io.netty.handler.codec.http.HttpHeaders.Names.*;
 
 public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObject> {
 
@@ -67,7 +69,7 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
 
     private HttpRequest request;
 
-    private boolean readingChunks;
+    private HttpData partialContent;
 
     private final StringBuilder responseContent = new StringBuilder();
 
@@ -120,11 +122,11 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
 
             // new getMethod
             Set<Cookie> cookies;
-            String value = request.headers().get(COOKIE);
+            String value = request.headers().get(HttpHeaderNames.COOKIE);
             if (value == null) {
                 cookies = Collections.emptySet();
             } else {
-                cookies = CookieDecoder.decode(value);
+                cookies = ServerCookieDecoder.STRICT.decode(value);
             }
             for (Cookie cookie : cookies) {
                 responseContent.append("COOKIE: " + cookie + "\r\n");
@@ -140,12 +142,12 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
             }
             responseContent.append("\r\n\r\n");
 
-            // if GET Method: should not try to create a HttpPostRequestDecoder
-            if (request.method().equals(HttpMethod.GET)) {
-                // GET Method: should not try to create a HttpPostRequestDecoder
+            // if GET Method: should not try to create an HttpPostRequestDecoder
+            if (HttpMethod.GET.equals(request.method())) {
+                // GET Method: should not try to create an HttpPostRequestDecoder
                 // So stop here
                 responseContent.append("\r\n\r\nEND OF GET CONTENT\r\n");
-                writeResponse(ctx.channel());
+                // Not now: LastHttpContent will be sent writeResponse(ctx.channel());
                 return;
             }
             try {
@@ -153,18 +155,16 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
             } catch (ErrorDataDecoderException e1) {
                 e1.printStackTrace();
                 responseContent.append(e1.getMessage());
-                writeResponse(ctx.channel());
-                ctx.channel().close();
+                writeResponse(ctx.channel(), true);
                 return;
             }
 
-            readingChunks = HttpHeaders.isTransferEncodingChunked(request);
+            boolean readingChunks = HttpUtil.isTransferEncodingChunked(request);
             responseContent.append("Is Chunked: " + readingChunks + "\r\n");
             responseContent.append("IsMultipart: " + decoder.isMultipart() + "\r\n");
             if (readingChunks) {
                 // Chunk version
                 responseContent.append("Chunks: ");
-                readingChunks = true;
             }
         }
 
@@ -179,8 +179,7 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
                 } catch (ErrorDataDecoderException e1) {
                     e1.printStackTrace();
                     responseContent.append(e1.getMessage());
-                    writeResponse(ctx.channel());
-                    ctx.channel().close();
+                    writeResponse(ctx.channel(), true);
                     return;
                 }
                 responseContent.append('o');
@@ -190,11 +189,12 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
                 // example of reading only if at the end
                 if (chunk instanceof LastHttpContent) {
                     writeResponse(ctx.channel());
-                    readingChunks = false;
 
                     reset();
                 }
             }
+        } else {
+            writeResponse(ctx.channel());
         }
     }
 
@@ -214,12 +214,37 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
             while (decoder.hasNext()) {
                 InterfaceHttpData data = decoder.next();
                 if (data != null) {
-                    try {
-                        // new value
-                        writeHttpData(data);
-                    } finally {
-                        data.release();
+                    // check if current HttpData is a FileUpload and previously set as partial
+                    if (partialContent == data) {
+                        logger.info(" 100% (FinalSize: " + partialContent.length() + ")");
+                        partialContent = null;
                     }
+                    // new value
+                    writeHttpData(data);
+                }
+            }
+            // Check partial decoding for a FileUpload
+            InterfaceHttpData data = decoder.currentPartialHttpData();
+            if (data != null) {
+                StringBuilder builder = new StringBuilder();
+                if (partialContent == null) {
+                    partialContent = (HttpData) data;
+                    if (partialContent instanceof FileUpload) {
+                        builder.append("Start FileUpload: ")
+                            .append(((FileUpload) partialContent).getFilename()).append(" ");
+                    } else {
+                        builder.append("Start Attribute: ")
+                            .append(partialContent.getName()).append(" ");
+                    }
+                    builder.append("(DefinedSize: ").append(partialContent.definedLength()).append(")");
+                }
+                if (partialContent.definedLength() > 0) {
+                    builder.append(" ").append(partialContent.length() * 100 / partialContent.definedLength())
+                        .append("% ");
+                    logger.info(builder.toString());
+                } else {
+                    builder.append(" ").append(partialContent.length()).append(" ");
+                    logger.info(builder.toString());
                 }
             }
         } catch (EndOfDataDecoderException e1) {
@@ -280,43 +305,46 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
     }
 
     private void writeResponse(Channel channel) {
+        writeResponse(channel, false);
+    }
+
+    private void writeResponse(Channel channel, boolean forceClose) {
         // Convert the response content to a ChannelBuffer.
         ByteBuf buf = copiedBuffer(responseContent.toString(), CharsetUtil.UTF_8);
         responseContent.setLength(0);
 
         // Decide whether to close the connection or not.
-        boolean close = request.headers().contains(CONNECTION, HttpHeaders.Values.CLOSE, true)
-                || request.protocolVersion().equals(HttpVersion.HTTP_1_0)
-                && !request.headers().contains(CONNECTION, HttpHeaders.Values.KEEP_ALIVE, true);
+        boolean keepAlive = HttpUtil.isKeepAlive(request) && !forceClose;
 
         // Build the response object.
         FullHttpResponse response = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
-        response.headers().set(CONTENT_TYPE, "text/plain; charset=UTF-8");
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
+        response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes());
 
-        if (!close) {
-            // There's no need to add 'Content-Length' header
-            // if this is the last response.
-            response.headers().set(CONTENT_LENGTH, buf.readableBytes());
+        if (!keepAlive) {
+            response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
+        } else if (request.protocolVersion().equals(HttpVersion.HTTP_1_0)) {
+            response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
         }
 
         Set<Cookie> cookies;
-        String value = request.headers().get(COOKIE);
+        String value = request.headers().get(HttpHeaderNames.COOKIE);
         if (value == null) {
             cookies = Collections.emptySet();
         } else {
-            cookies = CookieDecoder.decode(value);
+            cookies = ServerCookieDecoder.STRICT.decode(value);
         }
         if (!cookies.isEmpty()) {
             // Reset the cookies if necessary.
             for (Cookie cookie : cookies) {
-                response.headers().add(SET_COOKIE, ServerCookieEncoder.encode(cookie));
+                response.headers().add(HttpHeaderNames.SET_COOKIE, ServerCookieEncoder.STRICT.encode(cookie));
             }
         }
         // Write the response.
         ChannelFuture future = channel.writeAndFlush(response);
         // Close the connection after the write operation is done if necessary.
-        if (close) {
+        if (!keepAlive) {
             future.addListener(ChannelFutureListener.CLOSE);
         }
     }
@@ -398,11 +426,23 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
         FullHttpResponse response = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
 
-        response.headers().set(CONTENT_TYPE, "text/html; charset=UTF-8");
-        response.headers().set(CONTENT_LENGTH, buf.readableBytes());
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/html; charset=UTF-8");
+        response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes());
+
+        // Decide whether to close the connection or not.
+        boolean keepAlive = HttpUtil.isKeepAlive(request);
+        if (!keepAlive) {
+            response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
+        } else if (request.protocolVersion().equals(HttpVersion.HTTP_1_0)) {
+            response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+        }
 
         // Write the response.
-        ctx.channel().writeAndFlush(response);
+        ChannelFuture future = ctx.channel().writeAndFlush(response);
+        // Close the connection after the write operation is done if necessary.
+        if (!keepAlive) {
+            future.addListener(ChannelFutureListener.CLOSE);
+        }
     }
 
     @Override

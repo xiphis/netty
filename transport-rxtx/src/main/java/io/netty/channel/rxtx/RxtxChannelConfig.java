@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,6 +20,7 @@ import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.ChannelConfig;
 import io.netty.channel.MessageSizeEstimator;
 import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.WriteBufferWaterMark;
 
 /**
  * A configuration class for RXTX device connections.
@@ -48,7 +49,10 @@ import io.netty.channel.RecvByteBufAllocator;
  * <td>{@link RxtxChannelOption#WAIT_TIME}</td><td>{@link #setWaitTimeMillis(int)}</td>
  * </tr>
  * </table>
+ *
+ * @deprecated this transport will be removed in the next major version.
  */
+@Deprecated
 public interface RxtxChannelConfig extends ChannelConfig {
     enum Stopbits {
         /**
@@ -256,14 +260,14 @@ public interface RxtxChannelConfig extends ChannelConfig {
      *
      * @param waitTimeMillis The number of milliseconds to wait, defaulting to 0 (no
      *     wait) if unset
-     * @throws IllegalArgumentException if the supplied value is < 0
+     * @throws IllegalArgumentException if the supplied value is &lt; 0
      */
     RxtxChannelConfig setWaitTimeMillis(int waitTimeMillis);
 
     /**
      * Sets the maximal time (in ms) to block while try to read from the serial port. Default is 1000ms
      */
-    RxtxChannelConfig setReadTimeout(int readTimout);
+    RxtxChannelConfig setReadTimeout(int readTimeout);
 
     /**
      * Return the maximal time (in ms) to block and wait for something to be ready to read.
@@ -274,6 +278,7 @@ public interface RxtxChannelConfig extends ChannelConfig {
     RxtxChannelConfig setConnectTimeoutMillis(int connectTimeoutMillis);
 
     @Override
+    @Deprecated
     RxtxChannelConfig setMaxMessagesPerRead(int maxMessagesPerRead);
 
     @Override
@@ -296,6 +301,9 @@ public interface RxtxChannelConfig extends ChannelConfig {
 
     @Override
     RxtxChannelConfig setWriteBufferLowWaterMark(int writeBufferLowWaterMark);
+
+    @Override
+    RxtxChannelConfig setWriteBufferWaterMark(WriteBufferWaterMark writeBufferWaterMark);
 
     @Override
     RxtxChannelConfig setMessageSizeEstimator(MessageSizeEstimator estimator);

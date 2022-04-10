@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -23,7 +23,7 @@ import java.util.IdentityHashMap;
 import java.util.Set;
 
 /**
- * A special variant of {@link ThreadLocal} that yields higher access performan when accessed from a
+ * A special variant of {@link ThreadLocal} that yields higher access performance when accessed from a
  * {@link FastThreadLocalThread}.
  * <p>
  * Internally, a {@link FastThreadLocal} uses a constant index in an array, instead of using hash code and hash table,
@@ -62,7 +62,7 @@ public class FastThreadLocal<V> {
                 @SuppressWarnings("unchecked")
                 Set<FastThreadLocal<?>> variablesToRemove = (Set<FastThreadLocal<?>>) v;
                 FastThreadLocal<?>[] variablesToRemoveArray =
-                        variablesToRemove.toArray(new FastThreadLocal[variablesToRemove.size()]);
+                        variablesToRemove.toArray(new FastThreadLocal[0]);
                 for (FastThreadLocal<?> tlv: variablesToRemoveArray) {
                     tlv.remove(threadLocalMap);
                 }
@@ -131,8 +131,30 @@ public class FastThreadLocal<V> {
     /**
      * Returns the current value for the current thread
      */
+    @SuppressWarnings("unchecked")
     public final V get() {
-        return get(InternalThreadLocalMap.get());
+        InternalThreadLocalMap threadLocalMap = InternalThreadLocalMap.get();
+        Object v = threadLocalMap.indexedVariable(index);
+        if (v != InternalThreadLocalMap.UNSET) {
+            return (V) v;
+        }
+
+        return initialize(threadLocalMap);
+    }
+
+    /**
+     * Returns the current value for the current thread if it exists, {@code null} otherwise.
+     */
+    @SuppressWarnings("unchecked")
+    public final V getIfExists() {
+        InternalThreadLocalMap threadLocalMap = InternalThreadLocalMap.getIfSet();
+        if (threadLocalMap != null) {
+            Object v = threadLocalMap.indexedVariable(index);
+            if (v != InternalThreadLocalMap.UNSET) {
+                return (V) v;
+            }
+        }
+        return null;
     }
 
     /**
@@ -167,7 +189,8 @@ public class FastThreadLocal<V> {
      */
     public final void set(V value) {
         if (value != InternalThreadLocalMap.UNSET) {
-            set(InternalThreadLocalMap.get(), value);
+            InternalThreadLocalMap threadLocalMap = InternalThreadLocalMap.get();
+            setKnownNotUnset(threadLocalMap, value);
         } else {
             remove();
         }
@@ -178,11 +201,18 @@ public class FastThreadLocal<V> {
      */
     public final void set(InternalThreadLocalMap threadLocalMap, V value) {
         if (value != InternalThreadLocalMap.UNSET) {
-            if (threadLocalMap.setIndexedVariable(index, value)) {
-                addToVariablesToRemove(threadLocalMap, this);
-            }
+            setKnownNotUnset(threadLocalMap, value);
         } else {
             remove(threadLocalMap);
+        }
+    }
+
+    /**
+     * @see InternalThreadLocalMap#setIndexedVariable(int, Object).
+     */
+    private void setKnownNotUnset(InternalThreadLocalMap threadLocalMap, V value) {
+        if (threadLocalMap.setIndexedVariable(index, value)) {
+            addToVariablesToRemove(threadLocalMap, this);
         }
     }
 
@@ -201,15 +231,16 @@ public class FastThreadLocal<V> {
         return threadLocalMap != null && threadLocalMap.isIndexedVariableSet(index);
     }
     /**
-     * Sets the value to uninitialized; a proceeding call to get() will trigger a call to initialValue().
+     * Sets the value to uninitialized for the specified thread local map.
+     * After this, any subsequent call to get() will trigger a new call to initialValue().
      */
     public final void remove() {
         remove(InternalThreadLocalMap.getIfSet());
     }
 
     /**
-     * Sets the value to uninitialized for the specified thread local map;
-     * a proceeding call to get() will trigger a call to initialValue().
+     * Sets the value to uninitialized for the specified thread local map.
+     * After this, any subsequent call to get() will trigger a new call to initialValue().
      * The specified thread local map must be for the current thread.
      */
     @SuppressWarnings("unchecked")
@@ -238,7 +269,9 @@ public class FastThreadLocal<V> {
     }
 
     /**
-     * Invoked when this thread local variable is removed by {@link #remove()}.
+     * Invoked when this thread local variable is removed by {@link #remove()}. Be aware that {@link #remove()}
+     * is not guaranteed to be called when the `Thread` completes which means you can not depend on this for
+     * cleanup of the resources in the case of `Thread` completion.
      */
     protected void onRemoval(@SuppressWarnings("UnusedParameters") V value) throws Exception { }
 }

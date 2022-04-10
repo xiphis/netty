@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,11 +16,12 @@
 
 package io.netty.handler.codec.json;
 
+import static io.netty.util.internal.ObjectUtil.checkPositive;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
-import io.netty.channel.ChannelHandler;
 import io.netty.handler.codec.CorruptedFrameException;
 import io.netty.handler.codec.TooLongFrameException;
 import io.netty.channel.ChannelPipeline;
@@ -30,7 +31,12 @@ import java.util.List;
 /**
  * Splits a byte stream of JSON objects and arrays into individual objects/arrays and passes them up the
  * {@link ChannelPipeline}.
- *
+ * <p>
+ * The byte stream is expected to be in UTF-8 character encoding or ASCII. The current implementation
+ * uses direct {@code byte} to {@code char} cast and then compares that {@code char} to a few low range
+ * ASCII characters like {@code '{'}, {@code '['} or {@code '"'}. UTF-8 is not using low range [0..0x7F]
+ * byte values for multibyte codepoint representations therefore fully supported by this implementation.
+ * <p>
  * This class does not do any real parsing or validation. A sequence of bytes is considered a JSON object/array
  * if it contains a matching number of opening and closing braces/brackets. It's up to a subsequent
  * {@link ChannelHandler} to parse the JSON text into a more usable form i.e. a POJO.
@@ -44,6 +50,8 @@ public class JsonObjectDecoder extends ByteToMessageDecoder {
 
     private int openBraces;
     private int idx;
+
+    private int lastReaderIndex;
 
     private int state;
     private boolean insideString;
@@ -74,10 +82,7 @@ public class JsonObjectDecoder extends ByteToMessageDecoder {
      *
      */
     public JsonObjectDecoder(int maxObjectLength, boolean streamArrayElements) {
-        if (maxObjectLength < 1) {
-            throw new IllegalArgumentException("maxObjectLength must be a positive int");
-        }
-        this.maxObjectLength = maxObjectLength;
+        this.maxObjectLength = checkPositive(maxObjectLength, "maxObjectLength");
         this.streamArrayElements = streamArrayElements;
     }
 
@@ -88,20 +93,20 @@ public class JsonObjectDecoder extends ByteToMessageDecoder {
             return;
         }
 
+        if (this.idx > in.readerIndex() && lastReaderIndex != in.readerIndex()) {
+            this.idx = in.readerIndex() + (idx - lastReaderIndex);
+        }
+
         // index of next byte to process.
         int idx = this.idx;
         int wrtIdx = in.writerIndex();
 
         if (wrtIdx > maxObjectLength) {
             // buffer size exceeded maxObjectLength; discarding the complete buffer.
-            ctx.fireExceptionCaught(
-                    new TooLongFrameException(
-                            "object length exceeds " + maxObjectLength + ": " + wrtIdx + " bytes discarded")
-            );
-
             in.skipBytes(in.readableBytes());
             reset();
-            return;
+            throw new TooLongFrameException(
+                            "object length exceeds " + maxObjectLength + ": " + wrtIdx + " bytes discarded");
         }
 
         for (/* use current idx */; idx < wrtIdx; idx++) {
@@ -174,6 +179,7 @@ public class JsonObjectDecoder extends ByteToMessageDecoder {
         } else {
             this.idx = idx;
         }
+        this.lastReaderIndex = in.readerIndex();
     }
 
     /**
@@ -181,7 +187,7 @@ public class JsonObjectDecoder extends ByteToMessageDecoder {
      */
     @SuppressWarnings("UnusedParameters")
     protected ByteBuf extractObject(ChannelHandlerContext ctx, ByteBuf buffer, int index, int length) {
-        return buffer.slice(index, length).retain();
+        return buffer.retainedSlice(index, length);
     }
 
     private void decodeByte(byte c, ByteBuf in, int idx) {
@@ -194,9 +200,22 @@ public class JsonObjectDecoder extends ByteToMessageDecoder {
             // also contain braces/brackets and that could lead to incorrect results.
             if (!insideString) {
                 insideString = true;
-            // If the double quote wasn't escaped then this is the end of a string.
-            } else if (in.getByte(idx - 1) != '\\') {
-                insideString = false;
+            } else {
+                int backslashCount = 0;
+                idx--;
+                while (idx >= 0) {
+                    if (in.getByte(idx) == '\\') {
+                        backslashCount++;
+                        idx--;
+                    } else {
+                        break;
+                    }
+                }
+                // The double quote isn't escaped only if there are even "\"s.
+                if (backslashCount % 2 == 0) {
+                    // Since the double quote isn't escaped then this is the end of a string.
+                    insideString = false;
+                }
             }
         }
     }

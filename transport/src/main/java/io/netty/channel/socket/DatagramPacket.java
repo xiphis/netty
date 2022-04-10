@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -24,7 +24,7 @@ import java.net.InetSocketAddress;
 /**
  * The message container that is used for {@link DatagramChannel} to communicate with the remote peer.
  */
-public final class DatagramPacket
+public class DatagramPacket
         extends DefaultAddressedEnvelope<ByteBuf, InetSocketAddress> implements ByteBufHolder {
 
     /**
@@ -44,12 +44,22 @@ public final class DatagramPacket
 
     @Override
     public DatagramPacket copy() {
-        return new DatagramPacket(content().copy(), recipient(), sender());
+        return replace(content().copy());
     }
 
     @Override
     public DatagramPacket duplicate() {
-        return new DatagramPacket(content().duplicate(), recipient(), sender());
+        return replace(content().duplicate());
+    }
+
+    @Override
+    public DatagramPacket retainedDuplicate() {
+        return replace(content().retainedDuplicate());
+    }
+
+    @Override
+    public DatagramPacket replace(ByteBuf content) {
+        return new DatagramPacket(content, recipient(), sender());
     }
 
     @Override

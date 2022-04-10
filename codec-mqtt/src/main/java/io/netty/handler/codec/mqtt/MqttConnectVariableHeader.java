@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -21,7 +21,7 @@ import io.netty.util.internal.StringUtil;
 /**
  * Variable Header for the {@link MqttConnectMessage}
  */
-public class MqttConnectVariableHeader {
+public final class MqttConnectVariableHeader {
 
     private final String name;
     private final int version;
@@ -32,6 +32,7 @@ public class MqttConnectVariableHeader {
     private final boolean isWillFlag;
     private final boolean isCleanSession;
     private final int keepAliveTimeSeconds;
+    private final MqttProperties properties;
 
     public MqttConnectVariableHeader(
             String name,
@@ -43,6 +44,29 @@ public class MqttConnectVariableHeader {
             boolean isWillFlag,
             boolean isCleanSession,
             int keepAliveTimeSeconds) {
+        this(name,
+                version,
+                hasUserName,
+                hasPassword,
+                isWillRetain,
+                willQos,
+                isWillFlag,
+                isCleanSession,
+                keepAliveTimeSeconds,
+                MqttProperties.NO_PROPERTIES);
+    }
+
+    public MqttConnectVariableHeader(
+            String name,
+            int version,
+            boolean hasUserName,
+            boolean hasPassword,
+            boolean isWillRetain,
+            int willQos,
+            boolean isWillFlag,
+            boolean isCleanSession,
+            int keepAliveTimeSeconds,
+            MqttProperties properties) {
         this.name = name;
         this.version = version;
         this.hasUserName = hasUserName;
@@ -52,6 +76,7 @@ public class MqttConnectVariableHeader {
         this.isWillFlag = isWillFlag;
         this.isCleanSession = isCleanSession;
         this.keepAliveTimeSeconds = keepAliveTimeSeconds;
+        this.properties = MqttProperties.withEmptyDefaults(properties);
     }
 
     public String name() {
@@ -90,18 +115,23 @@ public class MqttConnectVariableHeader {
         return keepAliveTimeSeconds;
     }
 
+    public MqttProperties properties() {
+        return properties;
+    }
+
     @Override
     public String toString() {
-        StringBuilder builder = new StringBuilder(StringUtil.simpleClassName(this)).append('[');
-        builder.append("name=").append(name);
-        builder.append(", version=").append(version);
-        builder.append(", hasUserName=").append(hasUserName);
-        builder.append(", hasPassword=").append(hasPassword);
-        builder.append(", isWillRetain=").append(isWillRetain);
-        builder.append(", isWillFlag=").append(isWillFlag);
-        builder.append(", isCleanSession=").append(isCleanSession);
-        builder.append(", keepAliveTimeSeconds=").append(keepAliveTimeSeconds);
-        builder.append(']');
-        return builder.toString();
+        return new StringBuilder(StringUtil.simpleClassName(this))
+            .append('[')
+            .append("name=").append(name)
+            .append(", version=").append(version)
+            .append(", hasUserName=").append(hasUserName)
+            .append(", hasPassword=").append(hasPassword)
+            .append(", isWillRetain=").append(isWillRetain)
+            .append(", isWillFlag=").append(isWillFlag)
+            .append(", isCleanSession=").append(isCleanSession)
+            .append(", keepAliveTimeSeconds=").append(keepAliveTimeSeconds)
+            .append(']')
+            .toString();
     }
 }

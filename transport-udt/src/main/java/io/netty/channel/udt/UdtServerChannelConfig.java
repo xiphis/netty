@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -23,6 +23,7 @@ import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.MessageSizeEstimator;
 import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.WriteBufferWaterMark;
 
 /**
  * A {@link ChannelConfig} for a {@link UdtServerChannel}.
@@ -31,7 +32,10 @@ import io.netty.channel.RecvByteBufAllocator;
  * {@code "receiveBufferSize"} and {@code "sendBufferSize"} as maximum message
  * size. If received or sent message does not fit specified sizes,
  * {@link ChannelException} will be thrown.
+ *
+ * @deprecated The UDT transport is no longer maintained and will be removed.
  */
+@Deprecated
 public interface UdtServerChannelConfig extends UdtChannelConfig {
 
     /**
@@ -50,6 +54,7 @@ public interface UdtServerChannelConfig extends UdtChannelConfig {
     UdtServerChannelConfig setConnectTimeoutMillis(int connectTimeoutMillis);
 
     @Override
+    @Deprecated
     UdtServerChannelConfig setMaxMessagesPerRead(int maxMessagesPerRead);
 
     @Override
@@ -96,6 +101,9 @@ public interface UdtServerChannelConfig extends UdtChannelConfig {
 
     @Override
     UdtServerChannelConfig setWriteBufferLowWaterMark(int writeBufferLowWaterMark);
+
+    @Override
+    UdtServerChannelConfig setWriteBufferWaterMark(WriteBufferWaterMark writeBufferWaterMark);
 
     @Override
     UdtServerChannelConfig setMessageSizeEstimator(MessageSizeEstimator estimator);

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,11 +15,30 @@
  */
 package io.netty.handler.codec.compression;
 
-import io.netty.buffer.ByteBuf;
+import static io.netty.handler.codec.compression.Bzip2Constants.HUFFMAN_DECODE_MAX_CODE_LENGTH;
+import static io.netty.handler.codec.compression.Bzip2Constants.HUFFMAN_SYMBOL_RUNA;
+import static io.netty.handler.codec.compression.Bzip2Constants.HUFFMAN_SYMBOL_RUNB;
+import static io.netty.handler.codec.compression.Bzip2Constants.MAX_BLOCK_LENGTH;
 
-import static io.netty.handler.codec.compression.Bzip2Constants.*;
-
+/**
+ * Reads and decompresses a single Bzip2 block.<br><br>
+ *
+ * Block decoding consists of the following stages:<br>
+ * 1. Read block header<br>
+ * 2. Read Huffman tables<br>
+ * 3. Read and decode Huffman encoded data - {@link #decodeHuffmanData(Bzip2HuffmanStageDecoder)}<br>
+ * 4. Run-Length Decoding[2] - {@link #decodeHuffmanData(Bzip2HuffmanStageDecoder)}<br>
+ * 5. Inverse Move To Front Transform - {@link #decodeHuffmanData(Bzip2HuffmanStageDecoder)}<br>
+ * 6. Inverse Burrows Wheeler Transform - {@link #initialiseInverseBWT()}<br>
+ * 7. Run-Length Decoding[1] - {@link #read()}<br>
+ * 8. Optional Block De-Randomisation - {@link #read()} (through {@link #decodeNextBWTByte()})
+ */
 final class Bzip2BlockDecompressor {
+    /**
+     * A reader that provides bit-level reads.
+     */
+    private final Bzip2BitReader reader;
+
     /**
      * Calculates the block CRC from the fully decoded bytes of the block.
      */
@@ -129,25 +148,31 @@ final class Bzip2BlockDecompressor {
     /**
      * Table for Move To Front transformations.
      */
-    final Bzip2MoveToFrontTable symbolMTF = new Bzip2MoveToFrontTable();
+    private final Bzip2MoveToFrontTable symbolMTF = new Bzip2MoveToFrontTable();
 
-    int repeatCount;
-    int repeatIncrement = 1;
-    int mtfValue;
+    // This variables is used to save current state if we haven't got enough readable bits
+    private int repeatCount;
+    private int repeatIncrement = 1;
+    private int mtfValue;
 
-    Bzip2BlockDecompressor(int blockSize, int blockCRC, boolean blockRandomised, int bwtStartPointer) {
+    Bzip2BlockDecompressor(final int blockSize, final int blockCRC, final boolean blockRandomised,
+                           final int bwtStartPointer, final Bzip2BitReader reader) {
+
         bwtBlock = new byte[blockSize];
 
         this.blockCRC = blockCRC;
         this.blockRandomised = blockRandomised;
         this.bwtStartPointer = bwtStartPointer;
+
+        this.reader = reader;
     }
 
     /**
      * Reads the Huffman encoded data from the input stream, performs Run-Length Decoding and
      * applies the Move To Front transform to reconstruct the Burrows-Wheeler Transform array.
      */
-    boolean decodeHuffmanData(final Bzip2HuffmanStageDecoder huffmanDecoder, ByteBuf in) {
+    boolean decodeHuffmanData(final Bzip2HuffmanStageDecoder huffmanDecoder) {
+        final Bzip2BitReader reader = this.reader;
         final byte[] bwtBlock = this.bwtBlock;
         final byte[] huffmanSymbolMap = this.huffmanSymbolMap;
         final int streamBlockSize = this.bwtBlock.length;
@@ -161,14 +186,14 @@ final class Bzip2BlockDecompressor {
         int mtfValue = this.mtfValue;
 
         for (;;) {
-            if (in.readableBytes() < 3) {   // 3 = (HUFFMAN_DECODE_MAX_CODE_LENGTH + 1) bits / 8
+            if (!reader.hasReadableBits(HUFFMAN_DECODE_MAX_CODE_LENGTH)) {
                 this.bwtBlockLength = bwtBlockLength;
                 this.repeatCount = repeatCount;
                 this.repeatIncrement = repeatIncrement;
                 this.mtfValue = mtfValue;
                 return false;
             }
-            final int nextSymbol = huffmanDecoder.nextSymbol(in);
+            final int nextSymbol = huffmanDecoder.nextSymbol();
 
             if (nextSymbol == HUFFMAN_SYMBOL_RUNA) {
                 repeatCount += repeatIncrement;
@@ -206,6 +231,11 @@ final class Bzip2BlockDecompressor {
                 bwtBlock[bwtBlockLength++] = nextByte;
             }
         }
+        if (bwtBlockLength > MAX_BLOCK_LENGTH) {
+            throw new DecompressionException("block length exceeds max block length: "
+                    + bwtBlockLength + " > " + MAX_BLOCK_LENGTH);
+        }
+
         this.bwtBlockLength = bwtBlockLength;
         initialiseInverseBWT();
         return true;

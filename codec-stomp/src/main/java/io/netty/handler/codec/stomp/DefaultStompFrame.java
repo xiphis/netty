@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,6 +18,7 @@ package io.netty.handler.codec.stomp;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.CharsetUtil;
+import io.netty.util.internal.ObjectUtil;
 
 /**
  * Default implementation of {@link StompFrame}.
@@ -28,17 +29,15 @@ public class DefaultStompFrame extends DefaultStompHeadersSubframe implements St
 
     public DefaultStompFrame(StompCommand command) {
         this(command, Unpooled.buffer(0));
-        if (command == null) {
-            throw new NullPointerException("command");
-        }
     }
 
     public DefaultStompFrame(StompCommand command, ByteBuf content) {
-        super(command);
-        if (content == null) {
-            throw new NullPointerException("content");
-        }
-        this.content = content;
+        this(command, content, null);
+    }
+
+    DefaultStompFrame(StompCommand command, ByteBuf content, DefaultStompHeaders headers) {
+        super(command, headers);
+        this.content = ObjectUtil.checkNotNull(content, "content");
     }
 
     @Override
@@ -48,12 +47,22 @@ public class DefaultStompFrame extends DefaultStompHeadersSubframe implements St
 
     @Override
     public StompFrame copy() {
-        return new DefaultStompFrame(command, content.copy());
+        return replace(content.copy());
     }
 
     @Override
     public StompFrame duplicate() {
-        return new DefaultStompFrame(command, content.duplicate());
+        return replace(content.duplicate());
+    }
+
+    @Override
+    public StompFrame retainedDuplicate() {
+        return replace(content.retainedDuplicate());
+    }
+
+    @Override
+    public StompFrame replace(ByteBuf content) {
+        return new DefaultStompFrame(command, content, headers.copy());
     }
 
     @Override
@@ -69,7 +78,7 @@ public class DefaultStompFrame extends DefaultStompHeadersSubframe implements St
 
     @Override
     public StompFrame retain(int increment) {
-        content.retain();
+        content.retain(increment);
         return this;
     }
 
@@ -97,7 +106,7 @@ public class DefaultStompFrame extends DefaultStompHeadersSubframe implements St
 
     @Override
     public String toString() {
-        return "DefaultFullStompFrame{" +
+        return "DefaultStompFrame{" +
             "command=" + command +
             ", headers=" + headers +
             ", content=" + content.toString(CharsetUtil.UTF_8) +

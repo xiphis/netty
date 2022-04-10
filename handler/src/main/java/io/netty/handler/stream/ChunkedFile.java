@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,8 +16,10 @@
 package io.netty.handler.stream;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.FileRegion;
+import io.netty.util.internal.ObjectUtil;
 
 import java.io.File;
 import java.io.IOException;
@@ -27,7 +29,7 @@ import java.io.RandomAccessFile;
  * A {@link ChunkedInput} that fetches data from a file chunk by chunk.
  * <p>
  * If your operating system supports
- * <a href="http://en.wikipedia.org/wiki/Zero-copy">zero-copy file transfer</a>
+ * <a href="https://en.wikipedia.org/wiki/Zero-copy">zero-copy file transfer</a>
  * such as {@code sendfile()}, you might want to use {@link FileRegion} instead.
  */
 public class ChunkedFile implements ChunkedInput<ByteBuf> {
@@ -81,26 +83,14 @@ public class ChunkedFile implements ChunkedInput<ByteBuf> {
      *                  {@link #readChunk(ChannelHandlerContext)} call
      */
     public ChunkedFile(RandomAccessFile file, long offset, long length, int chunkSize) throws IOException {
-        if (file == null) {
-            throw new NullPointerException("file");
-        }
-        if (offset < 0) {
-            throw new IllegalArgumentException(
-                    "offset: " + offset + " (expected: 0 or greater)");
-        }
-        if (length < 0) {
-            throw new IllegalArgumentException(
-                    "length: " + length + " (expected: 0 or greater)");
-        }
-        if (chunkSize <= 0) {
-            throw new IllegalArgumentException(
-                    "chunkSize: " + chunkSize +
-                    " (expected: a positive integer)");
-        }
+        ObjectUtil.checkNotNull(file, "file");
+        ObjectUtil.checkPositiveOrZero(offset, "offset");
+        ObjectUtil.checkPositiveOrZero(length, "length");
+        ObjectUtil.checkPositive(chunkSize, "chunkSize");
 
         this.file = file;
         this.offset = startOffset = offset;
-        endOffset = offset + length;
+        this.endOffset = offset + length;
         this.chunkSize = chunkSize;
 
         file.seek(offset);
@@ -137,8 +127,14 @@ public class ChunkedFile implements ChunkedInput<ByteBuf> {
         file.close();
     }
 
+    @Deprecated
     @Override
     public ByteBuf readChunk(ChannelHandlerContext ctx) throws Exception {
+        return readChunk(ctx.alloc());
+    }
+
+    @Override
+    public ByteBuf readChunk(ByteBufAllocator allocator) throws Exception {
         long offset = this.offset;
         if (offset >= endOffset) {
             return null;
@@ -147,7 +143,7 @@ public class ChunkedFile implements ChunkedInput<ByteBuf> {
         int chunkSize = (int) Math.min(this.chunkSize, endOffset - offset);
         // Check if the buffer is backed by an byte array. If so we can optimize it a bit an safe a copy
 
-        ByteBuf buf = ctx.alloc().heapBuffer(chunkSize);
+        ByteBuf buf = allocator.heapBuffer(chunkSize);
         boolean release = true;
         try {
             file.readFully(buf.array(), buf.arrayOffset(), chunkSize);
@@ -160,5 +156,15 @@ public class ChunkedFile implements ChunkedInput<ByteBuf> {
                 buf.release();
             }
         }
+    }
+
+    @Override
+    public long length() {
+        return endOffset - startOffset;
+    }
+
+    @Override
+    public long progress() {
+        return offset - startOffset;
     }
 }

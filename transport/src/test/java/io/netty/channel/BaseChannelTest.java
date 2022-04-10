@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,7 +15,6 @@
  */
 package io.netty.channel;
 
-
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
@@ -23,7 +22,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.local.LocalChannel;
 import io.netty.channel.local.LocalServerChannel;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class BaseChannelTest {
 
@@ -64,9 +63,19 @@ class BaseChannelTest {
         return buf;
     }
 
-    void assertLog(String expected) {
+    void assertLog(String firstExpected, String... otherExpected) {
         String actual = loggingHandler.getLog();
-        assertEquals(expected, actual);
+        if (firstExpected.equals(actual)) {
+            return;
+        }
+        for (String e: otherExpected) {
+            if (e.equals(actual)) {
+                return;
+            }
+        }
+
+        // Let the comparison fail with the first expectation.
+        assertEquals(firstExpected, actual);
     }
 
     void clearLog() {

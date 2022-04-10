@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,7 +18,6 @@ package io.netty.handler.codec.stomp;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelPipeline;
-import io.netty.handler.codec.AsciiString;
 import io.netty.handler.codec.MessageAggregator;
 import io.netty.handler.codec.TooLongFrameException;
 
@@ -64,23 +63,24 @@ public class StompSubframeAggregator
     }
 
     @Override
-    protected boolean hasContentLength(StompHeadersSubframe start) throws Exception {
-        return start.headers().contains(StompHeaders.CONTENT_LENGTH);
+    protected boolean isContentLengthInvalid(StompHeadersSubframe start, int maxContentLength) {
+        return (int) Math.min(Integer.MAX_VALUE, start.headers().getLong(StompHeaders.CONTENT_LENGTH, -1)) >
+                     maxContentLength;
     }
 
     @Override
-    protected long contentLength(StompHeadersSubframe start) throws Exception {
-        CharSequence value = start.headers().get(StompHeaders.CONTENT_LENGTH);
-        if (value instanceof AsciiString) {
-            return ((AsciiString) value).parseLong();
-        }
-
-        return Long.parseLong(value.toString());
-    }
-
-    @Override
-    protected Object newContinueResponse(StompHeadersSubframe start) throws Exception {
+    protected Object newContinueResponse(StompHeadersSubframe start, int maxContentLength, ChannelPipeline pipeline) {
         return null;
+    }
+
+    @Override
+    protected boolean closeAfterContinueResponse(Object msg) throws Exception {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    protected boolean ignoreContentAfterContinueResponse(Object msg) throws Exception {
+        throw new UnsupportedOperationException();
     }
 
     @Override

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -24,11 +24,13 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.DefaultEventLoopGroup;
 import io.netty.util.ReferenceCountUtil;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class LocalTransportThreadModelTest2 {
 
@@ -36,17 +38,18 @@ public class LocalTransportThreadModelTest2 {
 
     static final int messageCountPerRun = 4;
 
-    @Test(timeout = 15000)
+    @Test
+    @Timeout(value = 15000, unit = TimeUnit.MILLISECONDS)
     public void testSocketReuse() throws InterruptedException {
         ServerBootstrap serverBootstrap = new ServerBootstrap();
-        LocalHander serverHandler = new LocalHander("SERVER");
+        LocalHandler serverHandler = new LocalHandler("SERVER");
         serverBootstrap
                 .group(new DefaultEventLoopGroup(), new DefaultEventLoopGroup())
                 .channel(LocalServerChannel.class)
                 .childHandler(serverHandler);
 
         Bootstrap clientBootstrap = new Bootstrap();
-        LocalHander clientHandler = new LocalHander("CLIENT");
+        LocalHandler clientHandler = new LocalHandler("CLIENT");
         clientBootstrap
                 .group(new DefaultEventLoopGroup())
                 .channel(LocalChannel.class)
@@ -70,7 +73,7 @@ public class LocalTransportThreadModelTest2 {
                 clientHandler.count.get());
     }
 
-    public void close(final Channel localChannel, final LocalHander localRegistrationHandler) {
+    public void close(final Channel localChannel, final LocalHandler localRegistrationHandler) {
         // we want to make sure we actually shutdown IN the event loop
         if (localChannel.eventLoop().inEventLoop()) {
             // Wait until all messages are flushed before closing the channel.
@@ -94,14 +97,14 @@ public class LocalTransportThreadModelTest2 {
     }
 
     @Sharable
-    static class LocalHander extends ChannelInboundHandlerAdapter {
+    static class LocalHandler extends ChannelInboundHandlerAdapter {
         private final String name;
 
         public volatile ChannelFuture lastWriteFuture;
 
         public final AtomicInteger count = new AtomicInteger(0);
 
-        LocalHander(String name) {
+        LocalHandler(String name) {
             this.name = name;
         }
 

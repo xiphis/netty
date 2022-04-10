@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -45,15 +45,13 @@ public final class Signal extends Error implements Constant<Signal> {
         return pool.valueOf(firstNameComponent, secondNameComponent);
     }
 
-    private final int id;
-    private final String name;
+    private final SignalConstant constant;
 
     /**
      * Creates a new {@link Signal} with the specified {@code name}.
      */
     private Signal(int id, String name) {
-        this.id = id;
-        this.name = name;
+        constant = new SignalConstant(id, name);
     }
 
     /**
@@ -66,24 +64,26 @@ public final class Signal extends Error implements Constant<Signal> {
         }
     }
 
+    // Suppress a warning since the method doesn't need synchronization
     @Override
-    public Throwable initCause(Throwable cause) {
+    public Throwable initCause(Throwable cause) {   // lgtm[java/non-sync-override]
         return this;
     }
 
+    // Suppress a warning since the method doesn't need synchronization
     @Override
-    public Throwable fillInStackTrace() {
+    public Throwable fillInStackTrace() {   // lgtm[java/non-sync-override]
         return this;
     }
 
     @Override
     public int id() {
-        return id;
+        return constant.id();
     }
 
     @Override
     public String name() {
-        return name;
+        return constant.name();
     }
 
     @Override
@@ -102,16 +102,17 @@ public final class Signal extends Error implements Constant<Signal> {
             return 0;
         }
 
-        int returnCode = name.compareTo(other.name());
-        if (returnCode != 0) {
-            return returnCode;
-        }
-
-        return ((Integer) id).compareTo(other.id());
+        return constant.compareTo(other.constant);
     }
 
     @Override
     public String toString() {
         return name();
+    }
+
+    private static final class SignalConstant extends AbstractConstant<SignalConstant> {
+        SignalConstant(int id, String name) {
+            super(id, name);
+        }
     }
 }

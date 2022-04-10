@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,10 +16,12 @@
 package io.netty.handler.codec.memcache.binary;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.util.internal.UnstableApi;
 
 /**
  * The default implementation of the {@link BinaryMemcacheRequest}.
  */
+@UnstableApi
 public class DefaultBinaryMemcacheRequest extends AbstractBinaryMemcacheMessage implements BinaryMemcacheRequest {
 
     /**
@@ -41,17 +43,8 @@ public class DefaultBinaryMemcacheRequest extends AbstractBinaryMemcacheMessage 
      *
      * @param key    the key to use.
      */
-    public DefaultBinaryMemcacheRequest(String key) {
+    public DefaultBinaryMemcacheRequest(ByteBuf key) {
         this(key, null);
-    }
-
-    /**
-     * Create a new {@link DefaultBinaryMemcacheRequest} with the header and extras.
-     *
-     * @param extras the extras to use.
-     */
-    public DefaultBinaryMemcacheRequest(ByteBuf extras) {
-        this(null, extras);
     }
 
     /**
@@ -60,7 +53,7 @@ public class DefaultBinaryMemcacheRequest extends AbstractBinaryMemcacheMessage 
      * @param key    the key to use.
      * @param extras the extras to use.
      */
-    public DefaultBinaryMemcacheRequest(String key, ByteBuf extras) {
+    public DefaultBinaryMemcacheRequest(ByteBuf key, ByteBuf extras) {
         super(key, extras);
         setMagic(REQUEST_MAGIC_BYTE);
     }
@@ -98,5 +91,15 @@ public class DefaultBinaryMemcacheRequest extends AbstractBinaryMemcacheMessage 
     public BinaryMemcacheRequest touch(Object hint) {
         super.touch(hint);
         return this;
+    }
+
+    /**
+     * Copies special metadata hold by this instance to the provided instance
+     *
+     * @param dst The instance where to copy the metadata of this instance to
+     */
+    void copyMeta(DefaultBinaryMemcacheRequest dst) {
+        super.copyMeta(dst);
+        dst.reserved = reserved;
     }
 }

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -22,6 +22,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelMetadata;
 import io.netty.channel.ChannelOutboundBuffer;
+import io.netty.util.internal.SocketUtils;
 import io.netty.channel.nio.AbstractNioMessageChannel;
 import io.netty.channel.udt.DefaultUdtChannelConfig;
 import io.netty.channel.udt.UdtChannel;
@@ -30,8 +31,12 @@ import io.netty.channel.udt.UdtMessage;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.security.AccessController;
+import java.security.PrivilegedActionException;
+import java.security.PrivilegedExceptionAction;
 import java.util.List;
 
 import static java.nio.channels.SelectionKey.*;
@@ -40,7 +45,10 @@ import static java.nio.channels.SelectionKey.*;
  * Message Connector for UDT Datagrams.
  * <p>
  * Note: send/receive must use {@link UdtMessage} in the pipeline
+ *
+ * @deprecated The UDT transport is no longer maintained and will be removed.
  */
+@Deprecated
 public class NioUdtMessageConnectorChannel extends AbstractNioMessageChannel implements UdtChannel {
 
     private static final InternalLogger logger =
@@ -71,9 +79,7 @@ public class NioUdtMessageConnectorChannel extends AbstractNioMessageChannel imp
             try {
                 channelUDT.close();
             } catch (final Exception e2) {
-                if (logger.isWarnEnabled()) {
-                    logger.warn("Failed to close channel.", e2);
-                }
+                logger.warn("Failed to close channel.", e2);
             }
             throw new ChannelException("Failed to configure channel.", e);
         }
@@ -94,7 +100,7 @@ public class NioUdtMessageConnectorChannel extends AbstractNioMessageChannel imp
 
     @Override
     protected void doBind(final SocketAddress localAddress) throws Exception {
-        javaChannel().bind(localAddress);
+        privilegedBind(javaChannel(), localAddress);
     }
 
     @Override
@@ -108,7 +114,7 @@ public class NioUdtMessageConnectorChannel extends AbstractNioMessageChannel imp
         doBind(localAddress != null? localAddress : new InetSocketAddress(0));
         boolean success = false;
         try {
-            final boolean connected = javaChannel().connect(remoteAddress);
+            final boolean connected = SocketUtils.connect(javaChannel(), remoteAddress);
             if (!connected) {
                 selectionKey().interestOps(
                         selectionKey().interestOps() | OP_CONNECT);
@@ -174,6 +180,9 @@ public class NioUdtMessageConnectorChannel extends AbstractNioMessageChannel imp
         final ByteBuf byteBuf = message.content();
 
         final int messageSize = byteBuf.readableBytes();
+        if (messageSize == 0) {
+            return true;
+        }
 
         final long writtenBytes;
         if (byteBuf.nioBufferCount() == 1) {
@@ -182,18 +191,13 @@ public class NioUdtMessageConnectorChannel extends AbstractNioMessageChannel imp
             writtenBytes = javaChannel().write(byteBuf.nioBuffers());
         }
 
-        // did not write the message
-        if (writtenBytes <= 0 && messageSize > 0) {
-            return false;
-        }
-
         // wrote message completely
-        if (writtenBytes != messageSize) {
+        if (writtenBytes > 0 && writtenBytes != messageSize) {
             throw new Error(
                     "Provider error: failed to write message. Provider library should be upgraded.");
         }
 
-        return true;
+        return writtenBytes > 0;
     }
 
     @Override
@@ -230,5 +234,20 @@ public class NioUdtMessageConnectorChannel extends AbstractNioMessageChannel imp
     @Override
     public InetSocketAddress remoteAddress() {
         return (InetSocketAddress) super.remoteAddress();
+    }
+
+    private static void privilegedBind(final SocketChannelUDT socketChannel, final SocketAddress localAddress)
+            throws IOException {
+        try {
+            AccessController.doPrivileged(new PrivilegedExceptionAction<Void>() {
+                @Override
+                public Void run() throws IOException {
+                    socketChannel.bind(localAddress);
+                    return null;
+                }
+            });
+        } catch (PrivilegedActionException e) {
+            throw (IOException) e.getCause();
+        }
     }
 }

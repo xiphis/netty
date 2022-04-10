@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,7 +18,8 @@ package io.netty.test.udt.util;
 
 import com.barchart.udt.SocketUDT;
 import com.barchart.udt.StatusUDT;
-import io.netty.util.internal.ThreadLocalRandom;
+import io.netty.util.internal.PlatformDependent;
+import io.netty.util.internal.SocketUtils;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
@@ -28,6 +29,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.IntBuffer;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Random;
 import java.util.Set;
 import java.util.TreeSet;
@@ -68,7 +70,7 @@ public final class UnitHelp {
      * Measure ping time to a host.
      */
     public static long ping(final String host) throws Exception {
-        final String name = System.getProperty("os.name").toLowerCase();
+        final String name = System.getProperty("os.name").toLowerCase(Locale.US);
 
         final String command;
         if (name.contains("linux")) {
@@ -106,11 +108,11 @@ public final class UnitHelp {
             final String host) {
         ServerSocket socket = null;
         try {
-            final InetAddress address = InetAddress.getByName(host);
+            final InetAddress address = SocketUtils.addressByName(host);
             socket = new ServerSocket(0, 3, address);
             return (InetSocketAddress) socket.getLocalSocketAddress();
         } catch (final Exception e) {
-            log.error("Failed to find addess.");
+            log.error("Failed to find address.");
             return null;
         } finally {
             if (socket != null) {
@@ -191,11 +193,11 @@ public final class UnitHelp {
      * Display current OS/ARCH.
      */
     public static void logOsArch() {
-        final StringBuilder text = new StringBuilder(1024);
-        text.append("\n\t");
-        text.append(System.getProperty("os.name"));
-        text.append("\n\t");
-        text.append(System.getProperty("os.arch"));
+        final StringBuilder text = new StringBuilder(1024)
+            .append("\n\t")
+            .append(System.getProperty("os.name"))
+            .append("\n\t")
+            .append(System.getProperty("os.arch"));
         log.info("\n\t[os/arch]{}", text);
     }
 
@@ -221,7 +223,7 @@ public final class UnitHelp {
 
     public static int[] randomIntArray(final int length, final int range) {
         final int[] array = new int[length];
-        final Random generator = ThreadLocalRandom.current();
+        final Random generator = PlatformDependent.threadLocalRandom();
         for (int i = 0; i < array.length; i++) {
             array[i] = generator.nextInt(range);
         }

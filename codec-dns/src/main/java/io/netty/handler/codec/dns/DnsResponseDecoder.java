@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 The Netty Project
+ * Copyright 2019 The Netty Project
  *
  * The Netty Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,129 +16,90 @@
 package io.netty.handler.codec.dns;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.ChannelHandler;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.socket.DatagramPacket;
-import io.netty.handler.codec.MessageToMessageDecoder;
-import io.netty.util.CharsetUtil;
+import io.netty.handler.codec.CorruptedFrameException;
 
-import java.util.List;
+import java.net.SocketAddress;
 
-/**
- * DnsResponseDecoder accepts {@link io.netty.channel.socket.DatagramPacket} and encodes to
- * {@link DnsResponse}. This class also contains methods for decoding parts of
- * DnsResponses such as questions and resource records.
- */
-@ChannelHandler.Sharable
-public class DnsResponseDecoder extends MessageToMessageDecoder<DatagramPacket> {
+import static io.netty.util.internal.ObjectUtil.checkNotNull;
 
-    @Override
-    protected void decode(ChannelHandlerContext ctx, DatagramPacket packet, List<Object> out) throws Exception {
-        ByteBuf buf = packet.content();
+abstract class DnsResponseDecoder<A extends SocketAddress> {
 
-        int id = buf.readUnsignedShort();
-
-        DnsResponse response = new DnsResponse(id, packet.sender());
-        DnsResponseHeader header = response.header();
-        int flags = buf.readUnsignedShort();
-        header.setType(flags >> 15);
-        header.setOpcode(flags >> 11 & 0xf);
-        header.setRecursionDesired((flags >> 8 & 1) == 1);
-        header.setAuthoritativeAnswer((flags >> 10 & 1) == 1);
-        header.setTruncated((flags >> 9 & 1) == 1);
-        header.setRecursionAvailable((flags >> 7 & 1) == 1);
-        header.setZ(flags >> 4 & 0x7);
-        header.setResponseCode(DnsResponseCode.valueOf(flags & 0xf));
-
-        int questions = buf.readUnsignedShort();
-        int answers = buf.readUnsignedShort();
-        int authorities = buf.readUnsignedShort();
-        int additionals = buf.readUnsignedShort();
-
-        for (int i = 0; i < questions; i++) {
-            response.addQuestion(decodeQuestion(buf));
-        }
-        if (header.responseCode() != DnsResponseCode.NOERROR) {
-            // response code for error
-            out.add(response);
-            return;
-        }
-        for (int i = 0; i < answers; i++) {
-            response.addAnswer(decodeResource(buf));
-        }
-        for (int i = 0; i < authorities; i++) {
-            response.addAuthorityResource(decodeResource(buf));
-        }
-        for (int i = 0; i < additionals; i++) {
-            response.addAdditionalResource(decodeResource(buf));
-        }
-        out.add(response);
-    }
+    private final DnsRecordDecoder recordDecoder;
 
     /**
-     * Retrieves a domain name given a buffer containing a DNS packet. If the
-     * name contains a pointer, the position of the buffer will be set to
-     * directly after the pointer's index after the name has been read.
-     *
-     * @param buf
-     *            the byte buffer containing the DNS packet
-     * @return the domain name for an entry
+     * Creates a new decoder with the specified {@code recordDecoder}.
      */
-    private static String readName(ByteBuf buf) {
-        int position = -1;
-        StringBuilder name = new StringBuilder();
-        for (int len = buf.readUnsignedByte(); buf.isReadable() && len != 0; len = buf.readUnsignedByte()) {
-            boolean pointer = (len & 0xc0) == 0xc0;
-            if (pointer) {
-                if (position == -1) {
-                    position = buf.readerIndex() + 1;
-                }
-                buf.readerIndex((len & 0x3f) << 8 | buf.readUnsignedByte());
-            } else {
-                name.append(buf.toString(buf.readerIndex(), len, CharsetUtil.UTF_8)).append('.');
-                buf.skipBytes(len);
+    DnsResponseDecoder(DnsRecordDecoder recordDecoder) {
+        this.recordDecoder = checkNotNull(recordDecoder, "recordDecoder");
+    }
+
+    final DnsResponse decode(A sender, A recipient, ByteBuf buffer) throws Exception {
+        final int id = buffer.readUnsignedShort();
+
+        final int flags = buffer.readUnsignedShort();
+        if (flags >> 15 == 0) {
+            throw new CorruptedFrameException("not a response");
+        }
+
+        final DnsResponse response = newResponse(
+                sender,
+                recipient,
+                id,
+                DnsOpCode.valueOf((byte) (flags >> 11 & 0xf)), DnsResponseCode.valueOf((byte) (flags & 0xf)));
+
+        response.setRecursionDesired((flags >> 8 & 1) == 1);
+        response.setAuthoritativeAnswer((flags >> 10 & 1) == 1);
+        response.setTruncated((flags >> 9 & 1) == 1);
+        response.setRecursionAvailable((flags >> 7 & 1) == 1);
+        response.setZ(flags >> 4 & 0x7);
+
+        boolean success = false;
+        try {
+            final int questionCount = buffer.readUnsignedShort();
+            final int answerCount = buffer.readUnsignedShort();
+            final int authorityRecordCount = buffer.readUnsignedShort();
+            final int additionalRecordCount = buffer.readUnsignedShort();
+
+            decodeQuestions(response, buffer, questionCount);
+            if (!decodeRecords(response, DnsSection.ANSWER, buffer, answerCount)) {
+                success = true;
+                return response;
+            }
+            if (!decodeRecords(response, DnsSection.AUTHORITY, buffer, authorityRecordCount)) {
+                success = true;
+                return response;
+            }
+
+            decodeRecords(response, DnsSection.ADDITIONAL, buffer, additionalRecordCount);
+            success = true;
+            return response;
+        } finally {
+            if (!success) {
+                response.release();
             }
         }
-        if (position != -1) {
-            buf.readerIndex(position);
-        }
-        if (name.length() == 0) {
-            return null;
-        }
-        return name.substring(0, name.length() - 1);
     }
 
-    /**
-     * Decodes a question, given a DNS packet in a byte buffer.
-     *
-     * @param buf
-     *            the byte buffer containing the DNS packet
-     * @return a decoded {@link DnsQuestion}
-     */
-    private static DnsQuestion decodeQuestion(ByteBuf buf) {
-        String name = readName(buf);
-        int type = buf.readUnsignedShort();
-        int qClass = buf.readUnsignedShort();
-        return new DnsQuestion(name, type, qClass);
+    protected abstract DnsResponse newResponse(A sender, A recipient, int id,
+                                               DnsOpCode opCode, DnsResponseCode responseCode) throws Exception;
+
+    private void decodeQuestions(DnsResponse response, ByteBuf buf, int questionCount) throws Exception {
+        for (int i = questionCount; i > 0; i --) {
+            response.addRecord(DnsSection.QUESTION, recordDecoder.decodeQuestion(buf));
+        }
     }
 
-    /**
-     * Decodes a resource record, given a DNS packet in a byte buffer.
-     *
-     * @param buf
-     *            the byte buffer containing the DNS packet
-     * @return a {@link DnsResource} record containing response data
-     */
-    private static DnsResource decodeResource(ByteBuf buf) {
-        String name = readName(buf);
-        int type = buf.readUnsignedShort();
-        int aClass = buf.readUnsignedShort();
-        long ttl = buf.readUnsignedInt();
-        int len = buf.readUnsignedShort();
+    private boolean decodeRecords(
+            DnsResponse response, DnsSection section, ByteBuf buf, int count) throws Exception {
+        for (int i = count; i > 0; i --) {
+            final DnsRecord r = recordDecoder.decodeRecord(buf);
+            if (r == null) {
+                // Truncated response
+                return false;
+            }
 
-        int readerIndex = buf.readerIndex();
-        ByteBuf payload = buf.duplicate().setIndex(readerIndex, readerIndex + len).retain();
-        buf.readerIndex(readerIndex + len);
-        return new DnsResource(name, type, aClass, ttl, payload);
+            response.addRecord(section, r);
+        }
+        return true;
     }
 }

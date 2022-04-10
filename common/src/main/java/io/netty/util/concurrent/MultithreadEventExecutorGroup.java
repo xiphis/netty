@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -14,6 +14,8 @@
  * under the License.
  */
 package io.netty.util.concurrent;
+
+import static io.netty.util.internal.ObjectUtil.checkPositive;
 
 import java.util.Collections;
 import java.util.Iterator;
@@ -32,10 +34,9 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
 
     private final EventExecutor[] children;
     private final Set<EventExecutor> readonlyChildren;
-    private final AtomicInteger childIndex = new AtomicInteger();
     private final AtomicInteger terminatedChildren = new AtomicInteger();
     private final Promise<?> terminationFuture = new DefaultPromise(GlobalEventExecutor.INSTANCE);
-    private final EventExecutorChooser chooser;
+    private final EventExecutorChooserFactory.EventExecutorChooser chooser;
 
     /**
      * Create a new instance.
@@ -56,20 +57,26 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
      * @param args              arguments which will passed to each {@link #newChild(Executor, Object...)} call
      */
     protected MultithreadEventExecutorGroup(int nThreads, Executor executor, Object... args) {
-        if (nThreads <= 0) {
-            throw new IllegalArgumentException(String.format("nThreads: %d (expected: > 0)", nThreads));
-        }
+        this(nThreads, executor, DefaultEventExecutorChooserFactory.INSTANCE, args);
+    }
+
+    /**
+     * Create a new instance.
+     *
+     * @param nThreads          the number of threads that will be used by this instance.
+     * @param executor          the Executor to use, or {@code null} if the default should be used.
+     * @param chooserFactory    the {@link EventExecutorChooserFactory} to use.
+     * @param args              arguments which will passed to each {@link #newChild(Executor, Object...)} call
+     */
+    protected MultithreadEventExecutorGroup(int nThreads, Executor executor,
+                                            EventExecutorChooserFactory chooserFactory, Object... args) {
+        checkPositive(nThreads, "nThreads");
 
         if (executor == null) {
             executor = new ThreadPerTaskExecutor(newDefaultThreadFactory());
         }
 
         children = new EventExecutor[nThreads];
-        if (isPowerOfTwo(children.length)) {
-            chooser = new PowerOfTwoEventExecutorChooser();
-        } else {
-            chooser = new GenericEventExecutorChooser();
-        }
 
         for (int i = 0; i < nThreads; i ++) {
             boolean success = false;
@@ -101,6 +108,8 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
             }
         }
 
+        chooser = chooserFactory.newChooser(children);
+
         final FutureListener<Object> terminationListener = new FutureListener<Object>() {
             @Override
             public void operationComplete(Future<Object> future) throws Exception {
@@ -130,7 +139,7 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
 
     @Override
     public Iterator<EventExecutor> iterator() {
-        return children().iterator();
+        return readonlyChildren.iterator();
     }
 
     /**
@@ -139,12 +148,6 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
      */
     public final int executorCount() {
         return children.length;
-    }
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public final <E extends EventExecutor> Set<E> children() {
-        return (Set<E>) readonlyChildren;
     }
 
     /**
@@ -221,27 +224,5 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
             }
         }
         return isTerminated();
-    }
-
-    private static boolean isPowerOfTwo(int val) {
-        return (val & -val) == val;
-    }
-
-    private interface EventExecutorChooser {
-        EventExecutor next();
-    }
-
-    private final class PowerOfTwoEventExecutorChooser implements EventExecutorChooser {
-        @Override
-        public EventExecutor next() {
-            return children[childIndex.getAndIncrement() & children.length - 1];
-        }
-    }
-
-    private final class GenericEventExecutorChooser implements EventExecutorChooser {
-        @Override
-        public EventExecutor next() {
-            return children[Math.abs(childIndex.getAndIncrement() % children.length)];
-        }
     }
 }

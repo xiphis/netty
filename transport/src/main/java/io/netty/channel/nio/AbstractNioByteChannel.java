@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -19,23 +19,42 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelConfig;
-import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelMetadata;
 import io.netty.channel.ChannelOutboundBuffer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.FileRegion;
 import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.internal.ChannelUtils;
 import io.netty.channel.socket.ChannelInputShutdownEvent;
+import io.netty.channel.socket.ChannelInputShutdownReadComplete;
+import io.netty.channel.socket.SocketChannelConfig;
 import io.netty.util.internal.StringUtil;
 
 import java.io.IOException;
 import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 
+import static io.netty.channel.internal.ChannelUtils.WRITE_STATUS_SNDBUF_FULL;
+
 /**
  * {@link AbstractNioChannel} base class for {@link Channel}s that operate on bytes.
  */
 public abstract class AbstractNioByteChannel extends AbstractNioChannel {
-    private Runnable flushTask;
+    private static final ChannelMetadata METADATA = new ChannelMetadata(false, 16);
+    private static final String EXPECTED_TYPES =
+            " (expected: " + StringUtil.simpleClassName(ByteBuf.class) + ", " +
+            StringUtil.simpleClassName(FileRegion.class) + ')';
+
+    private final Runnable flushTask = new Runnable() {
+        @Override
+        public void run() {
+            // Calling flush0 directly to ensure we not try to flush messages that were added via write(...) in the
+            // meantime.
+            ((AbstractNioUnsafe) unsafe()).flush0();
+        }
+    };
+    private boolean inputClosedSeenErrorOnRead;
 
     /**
      * Create a new instance
@@ -47,113 +66,115 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
         super(parent, ch, SelectionKey.OP_READ);
     }
 
+    /**
+     * Shutdown the input side of the channel.
+     */
+    protected abstract ChannelFuture shutdownInput();
+
+    protected boolean isInputShutdown0() {
+        return false;
+    }
+
     @Override
     protected AbstractNioUnsafe newUnsafe() {
         return new NioByteUnsafe();
     }
 
-    private final class NioByteUnsafe extends AbstractNioUnsafe {
-        private RecvByteBufAllocator.Handle allocHandle;
+    @Override
+    public ChannelMetadata metadata() {
+        return METADATA;
+    }
+
+    final boolean shouldBreakReadReady(ChannelConfig config) {
+        return isInputShutdown0() && (inputClosedSeenErrorOnRead || !isAllowHalfClosure(config));
+    }
+
+    private static boolean isAllowHalfClosure(ChannelConfig config) {
+        return config instanceof SocketChannelConfig &&
+                ((SocketChannelConfig) config).isAllowHalfClosure();
+    }
+
+    protected class NioByteUnsafe extends AbstractNioUnsafe {
 
         private void closeOnRead(ChannelPipeline pipeline) {
-            SelectionKey key = selectionKey();
-            setInputShutdown();
-            if (isOpen()) {
-                if (Boolean.TRUE.equals(config().getOption(ChannelOption.ALLOW_HALF_CLOSURE))) {
-                    key.interestOps(key.interestOps() & ~readInterestOp);
+            if (!isInputShutdown0()) {
+                if (isAllowHalfClosure(config())) {
+                    shutdownInput();
                     pipeline.fireUserEventTriggered(ChannelInputShutdownEvent.INSTANCE);
                 } else {
                     close(voidPromise());
                 }
+            } else {
+                inputClosedSeenErrorOnRead = true;
+                pipeline.fireUserEventTriggered(ChannelInputShutdownReadComplete.INSTANCE);
             }
         }
 
-        private void handleReadException(ChannelPipeline pipeline,
-                                         ByteBuf byteBuf, Throwable cause, boolean close) {
+        private void handleReadException(ChannelPipeline pipeline, ByteBuf byteBuf, Throwable cause, boolean close,
+                RecvByteBufAllocator.Handle allocHandle) {
             if (byteBuf != null) {
                 if (byteBuf.isReadable()) {
-                    setReadPending(false);
+                    readPending = false;
                     pipeline.fireChannelRead(byteBuf);
                 } else {
                     byteBuf.release();
                 }
             }
+            allocHandle.readComplete();
             pipeline.fireChannelReadComplete();
             pipeline.fireExceptionCaught(cause);
-            if (close || cause instanceof IOException) {
+
+            // If oom will close the read event, release connection.
+            // See https://github.com/netty/netty/issues/10434
+            if (close || cause instanceof OutOfMemoryError || cause instanceof IOException) {
                 closeOnRead(pipeline);
             }
         }
 
         @Override
-        public void read() {
+        public final void read() {
             final ChannelConfig config = config();
-            if (!config.isAutoRead() && !isReadPending()) {
-                // ChannelConfig.setAutoRead(false) was called in the meantime
-                removeReadOp();
+            if (shouldBreakReadReady(config)) {
+                clearReadPending();
                 return;
             }
-
             final ChannelPipeline pipeline = pipeline();
             final ByteBufAllocator allocator = config.getAllocator();
-            final int maxMessagesPerRead = config.getMaxMessagesPerRead();
-            RecvByteBufAllocator.Handle allocHandle = this.allocHandle;
-            if (allocHandle == null) {
-                this.allocHandle = allocHandle = config.getRecvByteBufAllocator().newHandle();
-            }
+            final RecvByteBufAllocator.Handle allocHandle = recvBufAllocHandle();
+            allocHandle.reset(config);
 
             ByteBuf byteBuf = null;
-            int messages = 0;
             boolean close = false;
             try {
-                int totalReadAmount = 0;
-                boolean readPendingReset = false;
                 do {
                     byteBuf = allocHandle.allocate(allocator);
-                    int writable = byteBuf.writableBytes();
-                    int localReadAmount = doReadBytes(byteBuf);
-                    if (localReadAmount <= 0) {
-                        // not was read release the buffer
+                    allocHandle.lastBytesRead(doReadBytes(byteBuf));
+                    if (allocHandle.lastBytesRead() <= 0) {
+                        // nothing was read. release the buffer.
                         byteBuf.release();
-                        close = localReadAmount < 0;
+                        byteBuf = null;
+                        close = allocHandle.lastBytesRead() < 0;
+                        if (close) {
+                            // There is nothing left to read as we received an EOF.
+                            readPending = false;
+                        }
                         break;
                     }
-                    if (!readPendingReset) {
-                        readPendingReset = true;
-                        setReadPending(false);
-                    }
+
+                    allocHandle.incMessagesRead(1);
+                    readPending = false;
                     pipeline.fireChannelRead(byteBuf);
                     byteBuf = null;
+                } while (allocHandle.continueReading());
 
-                    if (totalReadAmount >= Integer.MAX_VALUE - localReadAmount) {
-                        // Avoid overflow.
-                        totalReadAmount = Integer.MAX_VALUE;
-                        break;
-                    }
-
-                    totalReadAmount += localReadAmount;
-
-                    // stop reading
-                    if (!config.isAutoRead()) {
-                        break;
-                    }
-
-                    if (localReadAmount < writable) {
-                        // Read less than what the buffer can hold,
-                        // which might mean we drained the recv buffer completely.
-                        break;
-                    }
-                } while (++ messages < maxMessagesPerRead);
-
+                allocHandle.readComplete();
                 pipeline.fireChannelReadComplete();
-                allocHandle.record(totalReadAmount);
 
                 if (close) {
                     closeOnRead(pipeline);
-                    close = false;
                 }
             } catch (Throwable t) {
-                handleReadException(pipeline, byteBuf, t, close);
+                handleReadException(pipeline, byteBuf, t, close, allocHandle);
             } finally {
                 // Check if there is a readPending which was not processed yet.
                 // This could be for two reasons:
@@ -161,95 +182,108 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
                 // * The user called Channel.read() or ChannelHandlerContext.read() in channelReadComplete(...) method
                 //
                 // See https://github.com/netty/netty/issues/2254
-                if (!config.isAutoRead() && !isReadPending()) {
+                if (!readPending && !config.isAutoRead()) {
                     removeReadOp();
                 }
             }
         }
     }
 
+    /**
+     * Write objects to the OS.
+     * @param in the collection which contains objects to write.
+     * @return The value that should be decremented from the write quantum which starts at
+     * {@link ChannelConfig#getWriteSpinCount()}. The typical use cases are as follows:
+     * <ul>
+     *     <li>0 - if no write was attempted. This is appropriate if an empty {@link ByteBuf} (or other empty content)
+     *     is encountered</li>
+     *     <li>1 - if a single call to write data was made to the OS</li>
+     *     <li>{@link ChannelUtils#WRITE_STATUS_SNDBUF_FULL} - if an attempt to write data was made to the OS, but no
+     *     data was accepted</li>
+     * </ul>
+     * @throws Exception if an I/O exception occurs during write.
+     */
+    protected final int doWrite0(ChannelOutboundBuffer in) throws Exception {
+        Object msg = in.current();
+        if (msg == null) {
+            // Directly return here so incompleteWrite(...) is not called.
+            return 0;
+        }
+        return doWriteInternal(in, in.current());
+    }
+
+    private int doWriteInternal(ChannelOutboundBuffer in, Object msg) throws Exception {
+        if (msg instanceof ByteBuf) {
+            ByteBuf buf = (ByteBuf) msg;
+            if (!buf.isReadable()) {
+                in.remove();
+                return 0;
+            }
+
+            final int localFlushedAmount = doWriteBytes(buf);
+            if (localFlushedAmount > 0) {
+                in.progress(localFlushedAmount);
+                if (!buf.isReadable()) {
+                    in.remove();
+                }
+                return 1;
+            }
+        } else if (msg instanceof FileRegion) {
+            FileRegion region = (FileRegion) msg;
+            if (region.transferred() >= region.count()) {
+                in.remove();
+                return 0;
+            }
+
+            long localFlushedAmount = doWriteFileRegion(region);
+            if (localFlushedAmount > 0) {
+                in.progress(localFlushedAmount);
+                if (region.transferred() >= region.count()) {
+                    in.remove();
+                }
+                return 1;
+            }
+        } else {
+            // Should not reach here.
+            throw new Error();
+        }
+        return WRITE_STATUS_SNDBUF_FULL;
+    }
+
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
-        int writeSpinCount = -1;
-
-        for (;;) {
+        int writeSpinCount = config().getWriteSpinCount();
+        do {
             Object msg = in.current();
             if (msg == null) {
                 // Wrote all messages.
                 clearOpWrite();
-                break;
+                // Directly return here so incompleteWrite(...) is not called.
+                return;
+            }
+            writeSpinCount -= doWriteInternal(in, msg);
+        } while (writeSpinCount > 0);
+
+        incompleteWrite(writeSpinCount < 0);
+    }
+
+    @Override
+    protected final Object filterOutboundMessage(Object msg) {
+        if (msg instanceof ByteBuf) {
+            ByteBuf buf = (ByteBuf) msg;
+            if (buf.isDirect()) {
+                return msg;
             }
 
-            if (msg instanceof ByteBuf) {
-                ByteBuf buf = (ByteBuf) msg;
-                int readableBytes = buf.readableBytes();
-                if (readableBytes == 0) {
-                    in.remove();
-                    continue;
-                }
-
-                boolean setOpWrite = false;
-                boolean done = false;
-                long flushedAmount = 0;
-                if (writeSpinCount == -1) {
-                    writeSpinCount = config().getWriteSpinCount();
-                }
-                for (int i = writeSpinCount - 1; i >= 0; i --) {
-                    int localFlushedAmount = doWriteBytes(buf);
-                    if (localFlushedAmount == 0) {
-                        setOpWrite = true;
-                        break;
-                    }
-
-                    flushedAmount += localFlushedAmount;
-                    if (!buf.isReadable()) {
-                        done = true;
-                        break;
-                    }
-                }
-
-                in.progress(flushedAmount);
-
-                if (done) {
-                    in.remove();
-                } else {
-                    incompleteWrite(setOpWrite);
-                    break;
-                }
-            } else if (msg instanceof FileRegion) {
-                FileRegion region = (FileRegion) msg;
-                boolean setOpWrite = false;
-                boolean done = false;
-                long flushedAmount = 0;
-                if (writeSpinCount == -1) {
-                    writeSpinCount = config().getWriteSpinCount();
-                }
-                for (int i = writeSpinCount - 1; i >= 0; i --) {
-                    long localFlushedAmount = doWriteFileRegion(region);
-                    if (localFlushedAmount == 0) {
-                        setOpWrite = true;
-                        break;
-                    }
-
-                    flushedAmount += localFlushedAmount;
-                    if (region.transfered() >= region.count()) {
-                        done = true;
-                        break;
-                    }
-                }
-
-                in.progress(flushedAmount);
-
-                if (done) {
-                    in.remove();
-                } else {
-                    incompleteWrite(setOpWrite);
-                    break;
-                }
-            } else {
-                throw new UnsupportedOperationException("unsupported message type: " + StringUtil.simpleClassName(msg));
-            }
+            return newDirectBuffer(buf);
         }
+
+        if (msg instanceof FileRegion) {
+            return msg;
+        }
+
+        throw new UnsupportedOperationException(
+                "unsupported message type: " + StringUtil.simpleClassName(msg) + EXPECTED_TYPES);
     }
 
     protected final void incompleteWrite(boolean setOpWrite) {
@@ -257,16 +291,13 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
         if (setOpWrite) {
             setOpWrite();
         } else {
+            // It is possible that we have set the write OP, woken up by NIO because the socket is writable, and then
+            // use our write quantum. In this case we no longer want to set the write OP because the socket is still
+            // writable (as far as we know). We will find out next time we attempt to write if the socket is writable
+            // and set the write OP if necessary.
+            clearOpWrite();
+
             // Schedule flush again later so other tasks can be picked up in the meantime
-            Runnable flushTask = this.flushTask;
-            if (flushTask == null) {
-                flushTask = this.flushTask = new Runnable() {
-                    @Override
-                    public void run() {
-                        flush();
-                    }
-                };
-            }
             eventLoop().execute(flushTask);
         }
     }

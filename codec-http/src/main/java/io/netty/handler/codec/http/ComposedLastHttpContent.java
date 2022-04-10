@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -27,6 +27,12 @@ final class ComposedLastHttpContent implements LastHttpContent {
     ComposedLastHttpContent(HttpHeaders trailingHeaders) {
         this.trailingHeaders = trailingHeaders;
     }
+
+    ComposedLastHttpContent(HttpHeaders trailingHeaders, DecoderResult result) {
+        this(trailingHeaders);
+        this.result = result;
+    }
+
     @Override
     public HttpHeaders trailingHeaders() {
         return trailingHeaders;
@@ -37,6 +43,23 @@ final class ComposedLastHttpContent implements LastHttpContent {
         LastHttpContent content = new DefaultLastHttpContent(Unpooled.EMPTY_BUFFER);
         content.trailingHeaders().set(trailingHeaders());
         return content;
+    }
+
+    @Override
+    public LastHttpContent duplicate() {
+        return copy();
+    }
+
+    @Override
+    public LastHttpContent retainedDuplicate() {
+        return copy();
+    }
+
+    @Override
+    public LastHttpContent replace(ByteBuf content) {
+        final LastHttpContent dup = new DefaultLastHttpContent(content);
+        dup.trailingHeaders().setAll(trailingHeaders());
+        return dup;
     }
 
     @Override
@@ -57,11 +80,6 @@ final class ComposedLastHttpContent implements LastHttpContent {
     @Override
     public LastHttpContent touch(Object hint) {
         return this;
-    }
-
-    @Override
-    public LastHttpContent duplicate() {
-        return copy();
     }
 
     @Override

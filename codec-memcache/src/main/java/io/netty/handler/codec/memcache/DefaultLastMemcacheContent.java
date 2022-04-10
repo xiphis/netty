@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,10 +18,12 @@ package io.netty.handler.codec.memcache;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.util.internal.UnstableApi;
 
 /**
  * The default implementation for the {@link LastMemcacheContent}.
  */
+@UnstableApi
 public class DefaultLastMemcacheContent extends DefaultMemcacheContent implements LastMemcacheContent {
 
     public DefaultLastMemcacheContent() {
@@ -58,11 +60,21 @@ public class DefaultLastMemcacheContent extends DefaultMemcacheContent implement
 
     @Override
     public LastMemcacheContent copy() {
-        return new DefaultLastMemcacheContent(content().copy());
+        return replace(content().copy());
     }
 
     @Override
     public LastMemcacheContent duplicate() {
-        return new DefaultLastMemcacheContent(content().duplicate());
+        return replace(content().duplicate());
+    }
+
+    @Override
+    public LastMemcacheContent retainedDuplicate() {
+        return replace(content().retainedDuplicate());
+    }
+
+    @Override
+    public LastMemcacheContent replace(ByteBuf content) {
+        return new DefaultLastMemcacheContent(content);
     }
 }

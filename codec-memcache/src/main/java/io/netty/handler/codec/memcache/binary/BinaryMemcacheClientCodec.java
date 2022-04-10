@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,10 +16,11 @@
 package io.netty.handler.codec.memcache.binary;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.ChannelHandlerAppender;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.CombinedChannelDuplexHandler;
 import io.netty.handler.codec.PrematureChannelClosureException;
 import io.netty.handler.codec.memcache.LastMemcacheContent;
+import io.netty.util.internal.UnstableApi;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
@@ -35,7 +36,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * content, which defaults to 8192. This chunk size is the maximum, so if smaller chunks arrive they
  * will be passed up the pipeline and not queued up to the chunk size.
  */
-public final class BinaryMemcacheClientCodec extends ChannelHandlerAppender {
+@UnstableApi
+public final class BinaryMemcacheClientCodec extends
+        CombinedChannelDuplexHandler<BinaryMemcacheResponseDecoder, BinaryMemcacheRequestEncoder> {
 
     private final boolean failOnMissingResponse;
     private final AtomicLong requestResponseCounter = new AtomicLong();
@@ -64,8 +67,7 @@ public final class BinaryMemcacheClientCodec extends ChannelHandlerAppender {
      */
     public BinaryMemcacheClientCodec(int decodeChunkSize, boolean failOnMissingResponse) {
         this.failOnMissingResponse = failOnMissingResponse;
-        add(new Decoder(decodeChunkSize));
-        add(new Encoder());
+        init(new Decoder(decodeChunkSize), new Encoder());
     }
 
     private final class Encoder extends BinaryMemcacheRequestEncoder {

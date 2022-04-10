@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,7 +17,9 @@ package io.netty.handler.codec.http.multipart;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelException;
-import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpHeaderValues;
+import io.netty.util.internal.ObjectUtil;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -55,24 +57,17 @@ public class MemoryFileUpload extends AbstractMemoryHttpData implements FileUplo
 
     @Override
     public void setFilename(String filename) {
-        if (filename == null) {
-            throw new NullPointerException("filename");
-        }
-        this.filename = filename;
+        this.filename = ObjectUtil.checkNotNull(filename, "filename");
     }
 
     @Override
     public int hashCode() {
-        return getName().hashCode();
+        return FileUploadUtil.hashCode(this);
     }
 
     @Override
     public boolean equals(Object o) {
-        if (!(o instanceof Attribute)) {
-            return false;
-        }
-        Attribute attribute = (Attribute) o;
-        return getName().equalsIgnoreCase(attribute.getName());
+        return o instanceof FileUpload && FileUploadUtil.equals(this, (FileUpload) o);
     }
 
     @Override
@@ -85,21 +80,12 @@ public class MemoryFileUpload extends AbstractMemoryHttpData implements FileUplo
     }
 
     public int compareTo(FileUpload o) {
-        int v;
-        v = getName().compareToIgnoreCase(o.getName());
-        if (v != 0) {
-            return v;
-        }
-        // TODO should we compare size for instance ?
-        return v;
+        return FileUploadUtil.compareTo(this, o);
     }
 
     @Override
     public void setContentType(String contentType) {
-        if (contentType == null) {
-            throw new NullPointerException("contentType");
-        }
-        this.contentType = contentType;
+        this.contentType = ObjectUtil.checkNotNull(contentType, "contentType");
     }
 
     @Override
@@ -119,24 +105,55 @@ public class MemoryFileUpload extends AbstractMemoryHttpData implements FileUplo
 
     @Override
     public String toString() {
-        return HttpPostBodyUtil.CONTENT_DISPOSITION + ": " +
-            HttpPostBodyUtil.FORM_DATA + "; " + HttpPostBodyUtil.NAME + "=\"" + getName() +
-            "\"; " + HttpPostBodyUtil.FILENAME + "=\"" + filename + "\"\r\n" +
-            HttpHeaders.Names.CONTENT_TYPE + ": " + contentType +
-            (getCharset() != null? "; " + HttpHeaders.Values.CHARSET + '=' + getCharset() + "\r\n" : "\r\n") +
-            HttpHeaders.Names.CONTENT_LENGTH + ": " + length() + "\r\n" +
+        return HttpHeaderNames.CONTENT_DISPOSITION + ": " +
+               HttpHeaderValues.FORM_DATA + "; " + HttpHeaderValues.NAME + "=\"" + getName() +
+            "\"; " + HttpHeaderValues.FILENAME + "=\"" + filename + "\"\r\n" +
+            HttpHeaderNames.CONTENT_TYPE + ": " + contentType +
+            (getCharset() != null? "; " + HttpHeaderValues.CHARSET + '=' + getCharset().name() + "\r\n" : "\r\n") +
+            HttpHeaderNames.CONTENT_LENGTH + ": " + length() + "\r\n" +
             "Completed: " + isCompleted() +
             "\r\nIsInMemory: " + isInMemory();
     }
 
     @Override
     public FileUpload copy() {
-        MemoryFileUpload upload = new MemoryFileUpload(getName(), getFilename(), getContentType(),
-                getContentTransferEncoding(), getCharset(), size);
-        ByteBuf buf = content();
-        if (buf != null) {
+        final ByteBuf content = content();
+        return replace(content != null ? content.copy() : content);
+    }
+
+    @Override
+    public FileUpload duplicate() {
+        final ByteBuf content = content();
+        return replace(content != null ? content.duplicate() : content);
+    }
+
+    @Override
+    public FileUpload retainedDuplicate() {
+        ByteBuf content = content();
+        if (content != null) {
+            content = content.retainedDuplicate();
+            boolean success = false;
             try {
-                upload.setContent(buf.copy());
+                FileUpload duplicate = replace(content);
+                success = true;
+                return duplicate;
+            } finally {
+                if (!success) {
+                    content.release();
+                }
+            }
+        } else {
+            return replace(null);
+        }
+    }
+
+    @Override
+    public FileUpload replace(ByteBuf content) {
+        MemoryFileUpload upload = new MemoryFileUpload(
+                getName(), getFilename(), getContentType(), getContentTransferEncoding(), getCharset(), size);
+        if (content != null) {
+            try {
+                upload.setContent(content);
                 return upload;
             } catch (IOException e) {
                 throw new ChannelException(e);
@@ -145,21 +162,6 @@ public class MemoryFileUpload extends AbstractMemoryHttpData implements FileUplo
         return upload;
     }
 
-    @Override
-    public FileUpload duplicate() {
-        MemoryFileUpload upload = new MemoryFileUpload(getName(), getFilename(), getContentType(),
-                getContentTransferEncoding(), getCharset(), size);
-        ByteBuf buf = content();
-        if (buf != null) {
-            try {
-                upload.setContent(buf.duplicate());
-                return upload;
-            } catch (IOException e) {
-                throw new ChannelException(e);
-            }
-        }
-        return upload;
-    }
     @Override
     public FileUpload retain() {
         super.retain();

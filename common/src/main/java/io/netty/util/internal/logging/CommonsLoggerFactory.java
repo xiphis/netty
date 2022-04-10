@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,17 +18,25 @@ package io.netty.util.internal.logging;
 
 import org.apache.commons.logging.LogFactory;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * Logger factory which creates an
- * <a href="http://commons.apache.org/logging/">Apache Commons Logging</a>
+ * <a href="https://commons.apache.org/logging/">Apache Commons Logging</a>
  * logger.
+ *
+ * @deprecated Please use {@link Log4J2LoggerFactory} or {@link Log4JLoggerFactory} or
+ * {@link Slf4JLoggerFactory}.
  */
+@Deprecated
 public class CommonsLoggerFactory extends InternalLoggerFactory {
 
-    Map<String, InternalLogger> loggerMap = new HashMap<String, InternalLogger>();
+    public static final InternalLoggerFactory INSTANCE = new CommonsLoggerFactory();
+
+    /**
+     * @deprecated Use {@link #INSTANCE} instead.
+     */
+    @Deprecated
+    public CommonsLoggerFactory() {
+    }
 
     @Override
     public InternalLogger newInstance(String name) {

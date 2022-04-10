@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,13 +16,13 @@
 
 package io.netty.buffer;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 import java.nio.ByteOrder;
 import java.util.Random;
 
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
-import static org.junit.Assert.*;
 
 /**
  * Tests wrapping a wrapped buffer does not go way too deep chaining.
@@ -34,7 +34,7 @@ public class ByteBufDerivationTest {
         ByteBuf buf = Unpooled.buffer(8).setIndex(1, 7);
         ByteBuf slice = buf.slice(1, 7);
 
-        assertThat(slice, instanceOf(SlicedByteBuf.class));
+        assertThat(slice, instanceOf(AbstractUnpooledSlicedByteBuf.class));
         assertThat(slice.unwrap(), sameInstance(buf));
         assertThat(slice.readerIndex(), is(0));
         assertThat(slice.writerIndex(), is(7));
@@ -53,7 +53,7 @@ public class ByteBufDerivationTest {
         ByteBuf slice2 = slice.slice(0, 6);
 
         assertThat(slice2, not(sameInstance(slice)));
-        assertThat(slice2, instanceOf(SlicedByteBuf.class));
+        assertThat(slice2, instanceOf(AbstractUnpooledSlicedByteBuf.class));
         assertThat(slice2.unwrap(), sameInstance(buf));
         assertThat(slice2.writerIndex(), is(6));
         assertThat(slice2.capacity(), is(6));
@@ -156,7 +156,7 @@ public class ByteBufDerivationTest {
         ByteBuf swapped = buf.order(ByteOrder.LITTLE_ENDIAN);
 
         assertThat(swapped, instanceOf(SwappedByteBuf.class));
-        assertThat(swapped.unwrap(), is((ByteBuf) null));
+        assertThat(swapped.unwrap(), sameInstance(buf));
         assertThat(swapped.order(ByteOrder.LITTLE_ENDIAN), sameInstance(swapped));
         assertThat(swapped.order(ByteOrder.BIG_ENDIAN), sameInstance(buf));
 

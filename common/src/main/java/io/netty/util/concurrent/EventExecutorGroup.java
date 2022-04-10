@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,22 +17,21 @@ package io.netty.util.concurrent;
 
 import java.util.Iterator;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * The {@link EventExecutorGroup} is responsible to provide {@link EventExecutor}'s to use via its
- * {@link #next()} method. Beside this it also is responsible to handle their live-cycle and allows
- * to shut them down in a global fashion.
+ * The {@link EventExecutorGroup} is responsible for providing the {@link EventExecutor}'s to use
+ * via its {@link #next()} method. Besides this, it is also responsible for handling their
+ * life-cycle and allows shutting them down in a global fashion.
  *
  */
 public interface EventExecutorGroup extends ScheduledExecutorService, Iterable<EventExecutor> {
 
     /**
      * Returns {@code true} if and only if all {@link EventExecutor}s managed by this {@link EventExecutorGroup}
-     * are being {@linkplain #shutdownGracefully() shut down gracefuclly} or was {@linkplain #isShutdown() shut down}.
+     * are being {@linkplain #shutdownGracefully() shut down gracefully} or was {@linkplain #isShutdown() shut down}.
      */
     boolean isShuttingDown();
 
@@ -84,17 +83,8 @@ public interface EventExecutorGroup extends ScheduledExecutorService, Iterable<E
      */
     EventExecutor next();
 
-    /**
-     * @deprecated Use {@link #children()} instead.
-     */
     @Override
-    @Deprecated
     Iterator<EventExecutor> iterator();
-
-    /**
-     * Returns the unmodifiable set of {@link EventExecutor}s managed by this {@link EventExecutorGroup}.
-     */
-    <E extends EventExecutor> Set<E> children();
 
     @Override
     Future<?> submit(Runnable task);

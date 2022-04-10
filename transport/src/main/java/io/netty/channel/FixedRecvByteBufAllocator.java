@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,18 +15,17 @@
  */
 package io.netty.channel;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-
+import static io.netty.util.internal.ObjectUtil.checkPositive;
 
 /**
  * The {@link RecvByteBufAllocator} that always yields the same buffer
  * size prediction.  This predictor ignores the feed back from the I/O thread.
  */
-public class FixedRecvByteBufAllocator implements RecvByteBufAllocator {
+public class FixedRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufAllocator {
 
-    private static final class HandleImpl implements Handle {
+    private final int bufferSize;
 
+    private final class HandleImpl extends MaxMessageHandle {
         private final int bufferSize;
 
         HandleImpl(int bufferSize) {
@@ -34,36 +33,29 @@ public class FixedRecvByteBufAllocator implements RecvByteBufAllocator {
         }
 
         @Override
-        public ByteBuf allocate(ByteBufAllocator alloc) {
-            return alloc.ioBuffer(bufferSize);
-        }
-
-        @Override
         public int guess() {
             return bufferSize;
         }
-
-        @Override
-        public void record(int actualReadBytes) { }
     }
-
-    private final Handle handle;
 
     /**
      * Creates a new predictor that always returns the same prediction of
      * the specified buffer size.
      */
     public FixedRecvByteBufAllocator(int bufferSize) {
-        if (bufferSize <= 0) {
-            throw new IllegalArgumentException(
-                    "bufferSize must greater than 0: " + bufferSize);
-        }
+        checkPositive(bufferSize, "bufferSize");
+        this.bufferSize = bufferSize;
+    }
 
-        handle = new HandleImpl(bufferSize);
+    @SuppressWarnings("deprecation")
+    @Override
+    public Handle newHandle() {
+        return new HandleImpl(bufferSize);
     }
 
     @Override
-    public Handle newHandle() {
-        return handle;
+    public FixedRecvByteBufAllocator respectMaybeMoreData(boolean respectMaybeMoreData) {
+        super.respectMaybeMoreData(respectMaybeMoreData);
+        return this;
     }
 }

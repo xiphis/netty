@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,6 +16,7 @@
 package io.netty.example.udt.echo.rendezvousBytes;
 
 import io.netty.example.udt.echo.rendezvous.Config;
+import io.netty.util.internal.SocketUtils;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -37,8 +38,8 @@ public class ByteEchoPeerOne extends ByteEchoPeerBase {
 
     public static void main(String[] args) throws Exception {
         final int messageSize = 64 * 1024;
-        final InetSocketAddress myAddress = new InetSocketAddress(Config.hostOne, Config.portOne);
-        final InetSocketAddress peerAddress = new InetSocketAddress(Config.hostTwo, Config.portTwo);
+        final InetSocketAddress myAddress = SocketUtils.socketAddress(Config.hostOne, Config.portOne);
+        final InetSocketAddress peerAddress = SocketUtils.socketAddress(Config.hostTwo, Config.portTwo);
         new ByteEchoPeerOne(messageSize, myAddress, peerAddress).run();
     }
 }

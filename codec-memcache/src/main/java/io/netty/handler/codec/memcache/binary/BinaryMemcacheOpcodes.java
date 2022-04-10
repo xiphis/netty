@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,12 +15,15 @@
  */
 package io.netty.handler.codec.memcache.binary;
 
+import io.netty.util.internal.UnstableApi;
+
 /**
  * Represents all Opcodes that can occur in a {@link BinaryMemcacheMessage}.
  * <p/>
  * This class can be extended if a custom application needs to implement a superset of the normally supported
  * operations by a vanilla memcached protocol.
  */
+@UnstableApi
 public final class BinaryMemcacheOpcodes {
 
     private BinaryMemcacheOpcodes() {

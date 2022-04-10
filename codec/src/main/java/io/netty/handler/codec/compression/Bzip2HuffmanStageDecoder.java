@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,13 +15,18 @@
  */
 package io.netty.handler.codec.compression;
 
-import io.netty.buffer.ByteBuf;
+import static io.netty.handler.codec.compression.Bzip2Constants.HUFFMAN_DECODE_MAX_CODE_LENGTH;
+import static io.netty.handler.codec.compression.Bzip2Constants.HUFFMAN_GROUP_RUN_LENGTH;
+import static io.netty.handler.codec.compression.Bzip2Constants.HUFFMAN_MAX_ALPHABET_SIZE;
 
-import static io.netty.handler.codec.compression.Bzip2Constants.*;
 /**
- * A decoder for the BZip2 Huffman coding stage
+ * A decoder for the Bzip2 Huffman coding stage.
  */
 final class Bzip2HuffmanStageDecoder {
+    /**
+     * A reader that provides bit-level reads.
+     */
+    private final Bzip2BitReader reader;
 
     /**
      * The Huffman table number to use for each group of 50 symbols.
@@ -94,10 +99,8 @@ final class Bzip2HuffmanStageDecoder {
     int currentAlpha;
     boolean modifyLength;
 
-    final Bzip2Decoder decoder;
-
-    Bzip2HuffmanStageDecoder(final Bzip2Decoder decoder, final int totalTables, final int alphabetSize) {
-        this.decoder = decoder;
+    Bzip2HuffmanStageDecoder(final Bzip2BitReader reader, final int totalTables, final int alphabetSize) {
+        this.reader = reader;
         this.totalTables = totalTables;
         this.alphabetSize = alphabetSize;
 
@@ -167,7 +170,7 @@ final class Bzip2HuffmanStageDecoder {
      * Decodes and returns the next symbol.
      * @return The decoded symbol
      */
-    int nextSymbol(ByteBuf in) {
+    int nextSymbol() {
         // Move to next group selector if required
         if (++groupPosition % HUFFMAN_GROUP_RUN_LENGTH == 0) {
             groupIndex++;
@@ -177,7 +180,7 @@ final class Bzip2HuffmanStageDecoder {
             currentTable = selectors[groupIndex] & 0xff;
         }
 
-        final Bzip2Decoder decoder = this.decoder;
+        final Bzip2BitReader reader = this.reader;
         final int currentTable = this.currentTable;
         final int[] tableLimits = codeLimits[currentTable];
         final int[] tableBases = codeBases[currentTable];
@@ -186,13 +189,13 @@ final class Bzip2HuffmanStageDecoder {
 
         // Starting with the minimum bit length for the table, read additional bits one at a time
         // until a complete code is recognised
-        int codeBits = decoder.readBits(in, codeLength);
+        int codeBits = reader.readBits(codeLength);
         for (; codeLength <= HUFFMAN_DECODE_MAX_CODE_LENGTH; codeLength++) {
             if (codeBits <= tableLimits[codeLength]) {
                 // Convert the code to a symbol index and return
                 return tableSymbols[codeBits - tableBases[codeLength]];
             }
-            codeBits = codeBits << 1 | decoder.readBits(in, 1);
+            codeBits = codeBits << 1 | reader.readBits(1);
         }
 
         throw new DecompressionException("a valid code was not recognised");

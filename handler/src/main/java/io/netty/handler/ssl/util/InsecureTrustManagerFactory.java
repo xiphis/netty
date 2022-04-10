@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -28,10 +28,10 @@ import java.security.KeyStore;
 import java.security.cert.X509Certificate;
 
 /**
- * An insecure {@link javax.net.ssl.TrustManagerFactory} that trusts all X.509 certificates without any verification.
+ * An insecure {@link TrustManagerFactory} that trusts all X.509 certificates without any verification.
  * <p>
  * <strong>NOTE:</strong>
- * Never use this {@link javax.net.ssl.TrustManagerFactory} in production.
+ * Never use this {@link TrustManagerFactory} in production.
  * It is purely for testing purposes, and thus it is very insecure.
  * </p>
  */
@@ -44,12 +44,16 @@ public final class InsecureTrustManagerFactory extends SimpleTrustManagerFactory
     private static final TrustManager tm = new X509TrustManager() {
         @Override
         public void checkClientTrusted(X509Certificate[] chain, String s) {
-            logger.debug("Accepting a client certificate: " + chain[0].getSubjectDN());
+            if (logger.isDebugEnabled()) {
+                logger.debug("Accepting a client certificate: " + chain[0].getSubjectDN());
+            }
         }
 
         @Override
         public void checkServerTrusted(X509Certificate[] chain, String s) {
-            logger.debug("Accepting a server certificate: " + chain[0].getSubjectDN());
+            if (logger.isDebugEnabled()) {
+                logger.debug("Accepting a server certificate: " + chain[0].getSubjectDN());
+            }
         }
 
         @Override

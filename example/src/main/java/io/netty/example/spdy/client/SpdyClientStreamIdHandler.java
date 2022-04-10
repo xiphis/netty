@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,7 +18,6 @@ package io.netty.example.spdy.client;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
-import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMessage;
 import io.netty.handler.codec.spdy.SpdyHttpHeaders;
 import io.netty.handler.codec.spdy.SpdyHttpHeaders.Names;
@@ -39,7 +38,7 @@ public class SpdyClientStreamIdHandler extends ChannelOutboundHandlerAdapter {
         if (acceptOutboundMessage(msg)) {
             HttpMessage httpMsg = (HttpMessage) msg;
             if (!httpMsg.headers().contains(SpdyHttpHeaders.Names.STREAM_ID)) {
-                HttpHeaders.setIntHeader(httpMsg, Names.STREAM_ID, currentStreamId);
+                httpMsg.headers().setInt(Names.STREAM_ID, currentStreamId);
                 // Client stream IDs are always odd
                 currentStreamId += 2;
             }

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -23,27 +23,37 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.DefaultChannelConfig;
 import io.netty.channel.MessageSizeEstimator;
 import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.WriteBufferWaterMark;
 
 import java.io.IOException;
 import java.util.Map;
 
-import static io.netty.channel.ChannelOption.*;
-import static io.netty.channel.udt.UdtChannelOption.*;
+import static io.netty.channel.ChannelOption.SO_LINGER;
+import static io.netty.channel.ChannelOption.SO_RCVBUF;
+import static io.netty.channel.ChannelOption.SO_REUSEADDR;
+import static io.netty.channel.ChannelOption.SO_SNDBUF;
+import static io.netty.channel.udt.UdtChannelOption.PROTOCOL_RECEIVE_BUFFER_SIZE;
+import static io.netty.channel.udt.UdtChannelOption.PROTOCOL_SEND_BUFFER_SIZE;
+import static io.netty.channel.udt.UdtChannelOption.SYSTEM_RECEIVE_BUFFER_SIZE;
+import static io.netty.channel.udt.UdtChannelOption.SYSTEM_SEND_BUFFER_SIZE;
 
 /**
  * The default {@link UdtChannelConfig} implementation.
+ *
+ * @deprecated The UDT transport is no longer maintained and will be removed.
  */
+@Deprecated
 public class DefaultUdtChannelConfig extends DefaultChannelConfig implements
         UdtChannelConfig {
 
     private static final int K = 1024;
     private static final int M = K * K;
 
-    private volatile int protocolReceiveBuferSize = 10 * M;
-    private volatile int protocolSendBuferSize = 10 * M;
+    private volatile int protocolReceiveBufferSize = 10 * M;
+    private volatile int protocolSendBufferSize = 10 * M;
 
     private volatile int systemReceiveBufferSize = M;
-    private volatile int systemSendBuferSize = M;
+    private volatile int systemSendBufferSize = M;
 
     private volatile int allocatorReceiveBufferSize = 128 * K;
     private volatile int allocatorSendBufferSize = 128 * K;
@@ -82,7 +92,7 @@ public class DefaultUdtChannelConfig extends DefaultChannelConfig implements
 
     @Override
     public int getProtocolReceiveBufferSize() {
-        return protocolReceiveBuferSize;
+        return protocolReceiveBufferSize;
     }
 
     @SuppressWarnings("unchecked")
@@ -144,8 +154,8 @@ public class DefaultUdtChannelConfig extends DefaultChannelConfig implements
     }
 
     @Override
-    public UdtChannelConfig setProtocolReceiveBufferSize(final int protocolReceiveBuferSize) {
-        this.protocolReceiveBuferSize = protocolReceiveBuferSize;
+    public UdtChannelConfig setProtocolReceiveBufferSize(final int protocolReceiveBufferSize) {
+        this.protocolReceiveBufferSize = protocolReceiveBufferSize;
         return this;
     }
 
@@ -212,26 +222,26 @@ public class DefaultUdtChannelConfig extends DefaultChannelConfig implements
 
     @Override
     public int getProtocolSendBufferSize() {
-        return protocolSendBuferSize;
+        return protocolSendBufferSize;
     }
 
     @Override
     public UdtChannelConfig setProtocolSendBufferSize(
-            final int protocolSendBuferSize) {
-        this.protocolSendBuferSize = protocolSendBuferSize;
+            final int protocolSendBufferSize) {
+        this.protocolSendBufferSize = protocolSendBufferSize;
         return this;
     }
 
     @Override
     public UdtChannelConfig setSystemReceiveBufferSize(
-            final int systemSendBuferSize) {
-        this.systemSendBuferSize = systemSendBuferSize;
+            final int systemSendBufferSize) {
+        this.systemSendBufferSize = systemSendBufferSize;
         return this;
     }
 
     @Override
     public int getSystemSendBufferSize() {
-        return systemSendBuferSize;
+        return systemSendBufferSize;
     }
 
     @Override
@@ -241,6 +251,7 @@ public class DefaultUdtChannelConfig extends DefaultChannelConfig implements
     }
 
     @Override
+    @Deprecated
     public UdtChannelConfig setMaxMessagesPerRead(int maxMessagesPerRead) {
         super.setMaxMessagesPerRead(maxMessagesPerRead);
         return this;
@@ -285,6 +296,12 @@ public class DefaultUdtChannelConfig extends DefaultChannelConfig implements
     @Override
     public UdtChannelConfig setWriteBufferHighWaterMark(int writeBufferHighWaterMark) {
         super.setWriteBufferHighWaterMark(writeBufferHighWaterMark);
+        return this;
+    }
+
+    @Override
+    public UdtChannelConfig setWriteBufferWaterMark(WriteBufferWaterMark writeBufferWaterMark) {
+        super.setWriteBufferWaterMark(writeBufferWaterMark);
         return this;
     }
 

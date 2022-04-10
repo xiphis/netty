@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -25,23 +25,34 @@ import java.util.List;
 /**
  * A ChannelHandler which transform {@link ByteBuf} to {@link SctpMessage}  and send it through a specific stream
  * with given protocol identifier.
- *
+ * Unordered delivery of all messages may be requested by passing unordered = true to the constructor.
  */
 public class SctpOutboundByteStreamHandler extends MessageToMessageEncoder<ByteBuf> {
     private final int streamIdentifier;
     private final int protocolIdentifier;
+    private final boolean unordered;
 
     /**
      * @param streamIdentifier      stream number, this should be >=0 or <= max stream number of the association.
      * @param protocolIdentifier    supported application protocol id.
      */
     public SctpOutboundByteStreamHandler(int streamIdentifier, int protocolIdentifier) {
+        this(streamIdentifier, protocolIdentifier, false);
+    }
+
+    /**
+     * @param streamIdentifier      stream number, this should be >=0 or <= max stream number of the association.
+     * @param protocolIdentifier    supported application protocol id.
+     * @param unordered             if {@literal true}, SCTP Data Chunks will be sent with the U (unordered) flag set.
+     */
+    public SctpOutboundByteStreamHandler(int streamIdentifier, int protocolIdentifier, boolean unordered) {
         this.streamIdentifier = streamIdentifier;
         this.protocolIdentifier = protocolIdentifier;
+        this.unordered = unordered;
     }
 
     @Override
     protected void encode(ChannelHandlerContext ctx, ByteBuf msg, List<Object> out) throws Exception {
-        out.add(new SctpMessage(streamIdentifier, protocolIdentifier, msg.retain()));
+        out.add(new SctpMessage(protocolIdentifier, streamIdentifier, unordered, msg.retain()));
     }
 }

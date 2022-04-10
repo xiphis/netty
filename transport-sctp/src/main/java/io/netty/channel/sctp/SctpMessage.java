@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,8 +17,8 @@ package io.netty.channel.sctp;
 
 import com.sun.nio.sctp.MessageInfo;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.DefaultByteBufHolder;
+import io.netty.util.internal.ObjectUtil;
 
 /**
  * Representation of SCTP Data Chunk
@@ -26,6 +26,7 @@ import io.netty.buffer.DefaultByteBufHolder;
 public final class SctpMessage extends DefaultByteBufHolder {
     private final int streamIdentifier;
     private final int protocolIdentifier;
+    private final boolean unordered;
 
     private final MessageInfo msgInfo;
 
@@ -36,9 +37,21 @@ public final class SctpMessage extends DefaultByteBufHolder {
      * @param payloadBuffer channel buffer
      */
     public SctpMessage(int protocolIdentifier, int streamIdentifier, ByteBuf payloadBuffer) {
+        this(protocolIdentifier, streamIdentifier, false, payloadBuffer);
+    }
+
+    /**
+     * Essential data that is being carried within SCTP Data Chunk
+     * @param protocolIdentifier of payload
+     * @param streamIdentifier that you want to send the payload
+     * @param unordered if {@literal true}, the SCTP Data Chunk will be sent with the U (unordered) flag set.
+     * @param payloadBuffer channel buffer
+     */
+    public SctpMessage(int protocolIdentifier, int streamIdentifier, boolean unordered, ByteBuf payloadBuffer) {
         super(payloadBuffer);
         this.protocolIdentifier = protocolIdentifier;
         this.streamIdentifier = streamIdentifier;
+        this.unordered = unordered;
         msgInfo = null;
     }
 
@@ -49,12 +62,10 @@ public final class SctpMessage extends DefaultByteBufHolder {
      */
     public SctpMessage(MessageInfo msgInfo, ByteBuf payloadBuffer) {
         super(payloadBuffer);
-        if (msgInfo == null) {
-            throw new NullPointerException("msgInfo");
-        }
-        this.msgInfo = msgInfo;
-        streamIdentifier = msgInfo.streamNumber();
-        protocolIdentifier = msgInfo.payloadProtocolID();
+        this.msgInfo = ObjectUtil.checkNotNull(msgInfo, "msgInfo");
+        this.streamIdentifier = msgInfo.streamNumber();
+        this.protocolIdentifier = msgInfo.payloadProtocolID();
+        this.unordered = msgInfo.isUnordered();
     }
 
     /**
@@ -69,6 +80,13 @@ public final class SctpMessage extends DefaultByteBufHolder {
      */
     public int protocolIdentifier() {
         return protocolIdentifier;
+    }
+
+    /**
+     * return the unordered flag
+     */
+    public boolean isUnordered() {
+        return unordered;
     }
 
     /**
@@ -111,6 +129,10 @@ public final class SctpMessage extends DefaultByteBufHolder {
             return false;
         }
 
+        if (unordered != sctpFrame.unordered) {
+            return false;
+        }
+
         return content().equals(sctpFrame.content());
     }
 
@@ -118,25 +140,33 @@ public final class SctpMessage extends DefaultByteBufHolder {
     public int hashCode() {
         int result = streamIdentifier;
         result = 31 * result + protocolIdentifier;
+        // values 1231 and 1237 are referenced in the javadocs of Boolean#hashCode()
+        result = 31 * result + (unordered ? 1231 : 1237);
         result = 31 * result + content().hashCode();
         return result;
     }
 
     @Override
     public SctpMessage copy() {
-        if (msgInfo == null) {
-            return new SctpMessage(protocolIdentifier, streamIdentifier, content().copy());
-        } else {
-            return new SctpMessage(msgInfo, content().copy());
-        }
+        return (SctpMessage) super.copy();
     }
 
     @Override
     public SctpMessage duplicate() {
+        return (SctpMessage) super.duplicate();
+    }
+
+    @Override
+    public SctpMessage retainedDuplicate() {
+        return (SctpMessage) super.retainedDuplicate();
+    }
+
+    @Override
+    public SctpMessage replace(ByteBuf content) {
         if (msgInfo == null) {
-            return new SctpMessage(protocolIdentifier, streamIdentifier, content().duplicate());
+            return new SctpMessage(protocolIdentifier, streamIdentifier, unordered, content);
         } else {
-            return new SctpMessage(msgInfo, content().copy());
+            return new SctpMessage(msgInfo, content);
         }
     }
 
@@ -166,13 +196,9 @@ public final class SctpMessage extends DefaultByteBufHolder {
 
     @Override
     public String toString() {
-        if (refCnt() == 0) {
-            return "SctpFrame{" +
-                    "streamIdentifier=" + streamIdentifier + ", protocolIdentifier=" + protocolIdentifier +
-                    ", data=(FREED)}";
-        }
         return "SctpFrame{" +
-                "streamIdentifier=" + streamIdentifier + ", protocolIdentifier=" + protocolIdentifier +
-                ", data=" + ByteBufUtil.hexDump(content()) + '}';
+               "streamIdentifier=" + streamIdentifier + ", protocolIdentifier=" + protocolIdentifier +
+               ", unordered=" + unordered +
+               ", data=" + contentToString() + '}';
     }
 }

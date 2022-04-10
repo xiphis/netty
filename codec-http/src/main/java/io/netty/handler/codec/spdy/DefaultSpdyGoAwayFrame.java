@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -14,6 +14,8 @@
  * under the License.
  */
 package io.netty.handler.codec.spdy;
+
+import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
 
 import io.netty.util.internal.StringUtil;
 
@@ -62,10 +64,7 @@ public class DefaultSpdyGoAwayFrame implements SpdyGoAwayFrame {
 
     @Override
     public SpdyGoAwayFrame setLastGoodStreamId(int lastGoodStreamId) {
-        if (lastGoodStreamId < 0) {
-            throw new IllegalArgumentException("Last-good-stream-ID"
-                    + " cannot be negative: " + lastGoodStreamId);
-        }
+        checkPositiveOrZero(lastGoodStreamId, "lastGoodStreamId");
         this.lastGoodStreamId = lastGoodStreamId;
         return this;
     }
@@ -83,14 +82,14 @@ public class DefaultSpdyGoAwayFrame implements SpdyGoAwayFrame {
 
     @Override
     public String toString() {
-        StringBuilder buf = new StringBuilder();
-        buf.append(StringUtil.simpleClassName(this));
-        buf.append(StringUtil.NEWLINE);
-        buf.append("--> Last-good-stream-ID = ");
-        buf.append(lastGoodStreamId());
-        buf.append(StringUtil.NEWLINE);
-        buf.append("--> Status: ");
-        buf.append(status());
-        return buf.toString();
+        return new StringBuilder()
+            .append(StringUtil.simpleClassName(this))
+            .append(StringUtil.NEWLINE)
+            .append("--> Last-good-stream-ID = ")
+            .append(lastGoodStreamId())
+            .append(StringUtil.NEWLINE)
+            .append("--> Status: ")
+            .append(status())
+            .toString();
     }
 }

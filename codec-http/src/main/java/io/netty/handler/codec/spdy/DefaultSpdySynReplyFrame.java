@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,8 +20,7 @@ import io.netty.util.internal.StringUtil;
 /**
  * The default {@link SpdySynReplyFrame} implementation.
  */
-public class DefaultSpdySynReplyFrame extends DefaultSpdyHeadersFrame
-        implements SpdySynReplyFrame {
+public class DefaultSpdySynReplyFrame extends DefaultSpdyHeadersFrame implements SpdySynReplyFrame {
 
     /**
      * Creates a new instance.
@@ -30,6 +29,16 @@ public class DefaultSpdySynReplyFrame extends DefaultSpdyHeadersFrame
      */
     public DefaultSpdySynReplyFrame(int streamId) {
         super(streamId);
+    }
+
+    /**
+     * Creates a new instance.
+     *
+     * @param streamId        the Stream-ID of this frame
+     * @param validateHeaders validate the header names and values when adding them to the {@link SpdyHeaders}
+     */
+    public DefaultSpdySynReplyFrame(int streamId, boolean validateHeaders) {
+        super(streamId, validateHeaders);
     }
 
     @Override
@@ -52,17 +61,17 @@ public class DefaultSpdySynReplyFrame extends DefaultSpdyHeadersFrame
 
     @Override
     public String toString() {
-        StringBuilder buf = new StringBuilder();
-        buf.append(StringUtil.simpleClassName(this));
-        buf.append("(last: ");
-        buf.append(isLast());
-        buf.append(')');
-        buf.append(StringUtil.NEWLINE);
-        buf.append("--> Stream-ID = ");
-        buf.append(streamId());
-        buf.append(StringUtil.NEWLINE);
-        buf.append("--> Headers:");
-        buf.append(StringUtil.NEWLINE);
+        StringBuilder buf = new StringBuilder()
+            .append(StringUtil.simpleClassName(this))
+            .append("(last: ")
+            .append(isLast())
+            .append(')')
+            .append(StringUtil.NEWLINE)
+            .append("--> Stream-ID = ")
+            .append(streamId())
+            .append(StringUtil.NEWLINE)
+            .append("--> Headers:")
+            .append(StringUtil.NEWLINE);
         appendHeaders(buf);
 
         // Remove the last newline.

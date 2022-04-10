@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,18 +17,15 @@ package io.netty.handler.codec.http;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.handler.codec.AsciiString;
-import io.netty.handler.codec.http.DefaultHttpHeaders.NonValidatingTextHeaders;
-import io.netty.handler.codec.http.DefaultHttpHeaders.ValidatingTextHeaders;
+import io.netty.handler.codec.DefaultHeaders.NameValidator;
 import io.netty.util.internal.StringUtil;
 
-import java.util.Map;
+import java.util.Map.Entry;
 
 /**
  * The default {@link LastHttpContent} implementation.
  */
 public class DefaultLastHttpContent extends DefaultHttpContent implements LastHttpContent {
-
     private final HttpHeaders trailingHeaders;
     private final boolean validateHeaders;
 
@@ -42,23 +39,30 @@ public class DefaultLastHttpContent extends DefaultHttpContent implements LastHt
 
     public DefaultLastHttpContent(ByteBuf content, boolean validateHeaders) {
         super(content);
-        trailingHeaders = new DefaultHttpHeaders(
-                validateHeaders? new ValidatingTrailingTextHeaders() : new NonValidatingTextHeaders());
+        trailingHeaders = new TrailingHttpHeaders(validateHeaders);
         this.validateHeaders = validateHeaders;
     }
 
     @Override
     public LastHttpContent copy() {
-        DefaultLastHttpContent copy = new DefaultLastHttpContent(content().copy(), validateHeaders);
-        copy.trailingHeaders().set(trailingHeaders());
-        return copy;
+        return replace(content().copy());
     }
 
     @Override
     public LastHttpContent duplicate() {
-        DefaultLastHttpContent copy = new DefaultLastHttpContent(content().duplicate(), validateHeaders);
-        copy.trailingHeaders().set(trailingHeaders());
-        return copy;
+        return replace(content().duplicate());
+    }
+
+    @Override
+    public LastHttpContent retainedDuplicate() {
+        return replace(content().retainedDuplicate());
+    }
+
+    @Override
+    public LastHttpContent replace(ByteBuf content) {
+        final DefaultLastHttpContent dup = new DefaultLastHttpContent(content, validateHeaders);
+        dup.trailingHeaders().set(trailingHeaders());
+        return dup;
     }
 
     @Override
@@ -102,7 +106,7 @@ public class DefaultLastHttpContent extends DefaultHttpContent implements LastHt
     }
 
     private void appendHeaders(StringBuilder buf) {
-        for (Map.Entry<String, String> e: trailingHeaders()) {
+        for (Entry<String, String> e : trailingHeaders()) {
             buf.append(e.getKey());
             buf.append(": ");
             buf.append(e.getValue());
@@ -110,17 +114,22 @@ public class DefaultLastHttpContent extends DefaultHttpContent implements LastHt
         }
     }
 
-    private static final class ValidatingTrailingTextHeaders extends ValidatingTextHeaders {
-        @Override
-        protected CharSequence convertName(CharSequence name) {
-            name = super.convertName(name);
-            if (AsciiString.equalsIgnoreCase(HttpHeaders.Names.CONTENT_LENGTH, name) ||
-                    AsciiString.equalsIgnoreCase(HttpHeaders.Names.TRANSFER_ENCODING, name) ||
-                    AsciiString.equalsIgnoreCase(HttpHeaders.Names.TRAILER, name)) {
-                throw new IllegalArgumentException(
-                        "prohibited trailing header: " + name);
+    private static final class TrailingHttpHeaders extends DefaultHttpHeaders {
+        private static final NameValidator<CharSequence> TrailerNameValidator = new NameValidator<CharSequence>() {
+            @Override
+            public void validateName(CharSequence name) {
+                DefaultHttpHeaders.HttpNameValidator.validateName(name);
+                if (HttpHeaderNames.CONTENT_LENGTH.contentEqualsIgnoreCase(name)
+                        || HttpHeaderNames.TRANSFER_ENCODING.contentEqualsIgnoreCase(name)
+                        || HttpHeaderNames.TRAILER.contentEqualsIgnoreCase(name)) {
+                    throw new IllegalArgumentException("prohibited trailing header: " + name);
+                }
             }
-            return name;
+        };
+
+        @SuppressWarnings({ "unchecked" })
+        TrailingHttpHeaders(boolean validate) {
+            super(validate, validate ? TrailerNameValidator : NameValidator.NOT_NULL);
         }
     }
 }

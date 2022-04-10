@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,12 +18,17 @@ package io.netty.handler.codec.memcache.binary;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
-import org.junit.Test;
+import io.netty.handler.codec.memcache.DefaultLastMemcacheContent;
+import io.netty.handler.codec.memcache.DefaultMemcacheContent;
+import io.netty.util.CharsetUtil;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.CoreMatchers.*;
 import static org.hamcrest.MatcherAssert.*;
 import static org.hamcrest.core.IsNull.notNullValue;
 import static org.hamcrest.core.IsNull.nullValue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies the correct functionality of the {@link BinaryMemcacheObjectAggregator}.
@@ -71,6 +76,40 @@ public class BinaryMemcacheObjectAggregatorTest {
 
         assertThat(channel.readInbound(), nullValue());
 
-        channel.finish();
+        assertFalse(channel.finish());
+    }
+
+    @Test
+    public void shouldRetainByteBufWhenAggregating() {
+        channel = new EmbeddedChannel(
+                new BinaryMemcacheRequestEncoder(),
+                new BinaryMemcacheRequestDecoder(),
+                new BinaryMemcacheObjectAggregator(MAX_CONTENT_SIZE));
+
+        ByteBuf key = Unpooled.copiedBuffer("Netty", CharsetUtil.UTF_8);
+        ByteBuf extras = Unpooled.copiedBuffer("extras", CharsetUtil.UTF_8);
+        BinaryMemcacheRequest request = new DefaultBinaryMemcacheRequest(key, extras);
+
+        DefaultMemcacheContent content1 =
+                new DefaultMemcacheContent(Unpooled.copiedBuffer("Netty", CharsetUtil.UTF_8));
+        DefaultLastMemcacheContent content2 =
+                new DefaultLastMemcacheContent(Unpooled.copiedBuffer(" Rocks!", CharsetUtil.UTF_8));
+        int totalBodyLength = key.readableBytes() + extras.readableBytes() +
+                content1.content().readableBytes() + content2.content().readableBytes();
+        request.setTotalBodyLength(totalBodyLength);
+
+        assertTrue(channel.writeOutbound(request, content1, content2));
+
+        assertThat(channel.outboundMessages().size(), is(3));
+        assertTrue(channel.writeInbound(channel.readOutbound(), channel.readOutbound(), channel.readOutbound()));
+
+        FullBinaryMemcacheRequest read = channel.readInbound();
+        assertThat(read, notNullValue());
+        assertThat(read.key().toString(CharsetUtil.UTF_8), is("Netty"));
+        assertThat(read.extras().toString(CharsetUtil.UTF_8), is("extras"));
+        assertThat(read.content().toString(CharsetUtil.UTF_8), is("Netty Rocks!"));
+
+        read.release();
+        assertFalse(channel.finish());
     }
 }

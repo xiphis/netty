@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,11 +16,18 @@
 
 package io.netty.buffer;
 
-public interface ByteBufProcessor {
+import io.netty.util.ByteProcessor;
+
+/**
+ * @deprecated Use {@link ByteProcessor}.
+ */
+@Deprecated
+public interface ByteBufProcessor extends ByteProcessor {
 
     /**
-     * Aborts on a {@code NUL (0x00)}.
+     * @deprecated Use {@link ByteProcessor#FIND_NUL}.
      */
+    @Deprecated
     ByteBufProcessor FIND_NUL = new ByteBufProcessor() {
         @Override
         public boolean process(byte value) throws Exception {
@@ -29,8 +36,9 @@ public interface ByteBufProcessor {
     };
 
     /**
-     * Aborts on a non-{@code NUL (0x00)}.
+     * @deprecated Use {@link ByteProcessor#FIND_NON_NUL}.
      */
+    @Deprecated
     ByteBufProcessor FIND_NON_NUL = new ByteBufProcessor() {
         @Override
         public boolean process(byte value) throws Exception {
@@ -39,8 +47,9 @@ public interface ByteBufProcessor {
     };
 
     /**
-     * Aborts on a {@code CR ('\r')}.
+     * @deprecated Use {@link ByteProcessor#FIND_CR}.
      */
+    @Deprecated
     ByteBufProcessor FIND_CR = new ByteBufProcessor() {
         @Override
         public boolean process(byte value) throws Exception {
@@ -49,8 +58,9 @@ public interface ByteBufProcessor {
     };
 
     /**
-     * Aborts on a non-{@code CR ('\r')}.
+     * @deprecated Use {@link ByteProcessor#FIND_NON_CR}.
      */
+    @Deprecated
     ByteBufProcessor FIND_NON_CR = new ByteBufProcessor() {
         @Override
         public boolean process(byte value) throws Exception {
@@ -59,8 +69,9 @@ public interface ByteBufProcessor {
     };
 
     /**
-     * Aborts on a {@code LF ('\n')}.
+     * @deprecated Use {@link ByteProcessor#FIND_LF}.
      */
+    @Deprecated
     ByteBufProcessor FIND_LF = new ByteBufProcessor() {
         @Override
         public boolean process(byte value) throws Exception {
@@ -69,8 +80,9 @@ public interface ByteBufProcessor {
     };
 
     /**
-     * Aborts on a non-{@code LF ('\n')}.
+     * @deprecated Use {@link ByteProcessor#FIND_NON_LF}.
      */
+    @Deprecated
     ByteBufProcessor FIND_NON_LF = new ByteBufProcessor() {
         @Override
         public boolean process(byte value) throws Exception {
@@ -79,8 +91,9 @@ public interface ByteBufProcessor {
     };
 
     /**
-     * Aborts on a {@code CR ('\r')} or a {@code LF ('\n')}.
+     * @deprecated Use {@link ByteProcessor#FIND_CRLF}.
      */
+    @Deprecated
     ByteBufProcessor FIND_CRLF = new ByteBufProcessor() {
         @Override
         public boolean process(byte value) throws Exception {
@@ -89,8 +102,9 @@ public interface ByteBufProcessor {
     };
 
     /**
-     * Aborts on a byte which is neither a {@code CR ('\r')} nor a {@code LF ('\n')}.
+     * @deprecated Use {@link ByteProcessor#FIND_NON_CRLF}.
      */
+    @Deprecated
     ByteBufProcessor FIND_NON_CRLF = new ByteBufProcessor() {
         @Override
         public boolean process(byte value) throws Exception {
@@ -99,8 +113,9 @@ public interface ByteBufProcessor {
     };
 
     /**
-     * Aborts on a linear whitespace (a ({@code ' '} or a {@code '\t'}).
+     * @deprecated Use {@link ByteProcessor#FIND_LINEAR_WHITESPACE}.
      */
+    @Deprecated
     ByteBufProcessor FIND_LINEAR_WHITESPACE = new ByteBufProcessor() {
         @Override
         public boolean process(byte value) throws Exception {
@@ -109,18 +124,13 @@ public interface ByteBufProcessor {
     };
 
     /**
-     * Aborts on a byte which is not a linear whitespace (neither {@code ' '} nor {@code '\t'}).
+     * @deprecated Use {@link ByteProcessor#FIND_NON_LINEAR_WHITESPACE}.
      */
+    @Deprecated
     ByteBufProcessor FIND_NON_LINEAR_WHITESPACE = new ByteBufProcessor() {
         @Override
         public boolean process(byte value) throws Exception {
             return value == ' ' || value == '\t';
         }
     };
-
-    /**
-     * @return {@code true} if the processor wants to continue the loop and handle the next byte in the buffer.
-     *         {@code false} if the processor wants to stop handling bytes and abort the loop.
-     */
-    boolean process(byte value) throws Exception;
 }

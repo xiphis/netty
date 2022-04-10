@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -38,12 +38,12 @@ final class SpdyHeaderBlockZlibDecoder extends SpdyHeaderBlockRawDecoder {
     }
 
     @Override
-    void decode(ByteBuf headerBlock, SpdyHeadersFrame frame) throws Exception {
+    void decode(ByteBufAllocator alloc, ByteBuf headerBlock, SpdyHeadersFrame frame) throws Exception {
         int len = setInput(headerBlock);
 
         int numBytes;
         do {
-            numBytes = decompress(headerBlock.alloc(), frame);
+            numBytes = decompress(alloc, frame);
         } while (numBytes > 0);
 
         // z_stream has an internal 64-bit hold buffer

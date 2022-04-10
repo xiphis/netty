@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,6 +15,8 @@
  */
 package io.netty.util.internal;
 
+import static io.netty.util.internal.ObjectUtil.checkPositive;
+import static io.netty.util.internal.ObjectUtil.checkNonEmpty;
 
 import java.util.Arrays;
 
@@ -23,15 +25,19 @@ public final class AppendableCharSequence implements CharSequence, Appendable {
     private int pos;
 
     public AppendableCharSequence(int length) {
-        if (length < 1) {
-            throw new IllegalArgumentException("length: " + length + " (length: >= 1)");
-        }
-        chars = new char[length];
+        chars = new char[checkPositive(length, "length")];
     }
 
     private AppendableCharSequence(char[] chars) {
-        this.chars = chars;
+        this.chars = checkNonEmpty(chars, "chars");
         pos = chars.length;
+    }
+
+    public void setLength(int length) {
+        if (length < 0 || length > pos) {
+            throw new IllegalArgumentException("length: " + length + " (length: >= 0, <= " + pos + ')');
+        }
+        this.pos = length;
     }
 
     @Override
@@ -47,8 +53,25 @@ public final class AppendableCharSequence implements CharSequence, Appendable {
         return chars[index];
     }
 
+    /**
+     * Access a value in this {@link CharSequence}.
+     * This method is considered unsafe as index values are assumed to be legitimate.
+     * Only underlying array bounds checking is done.
+     * @param index The index to access the underlying array at.
+     * @return The value at {@code index}.
+     */
+    public char charAtUnsafe(int index) {
+        return chars[index];
+    }
+
     @Override
     public AppendableCharSequence subSequence(int start, int end) {
+        if (start == end) {
+            // If start and end index is the same we need to return an empty sequence to conform to the interface.
+            // As our expanding logic depends on the fact that we have a char[] with length > 0 we need to construct
+            // an instance for which this is true.
+            return new AppendableCharSequence(Math.min(16, chars.length));
+        }
         return new AppendableCharSequence(Arrays.copyOfRange(chars, start, end));
     }
 
@@ -56,12 +79,7 @@ public final class AppendableCharSequence implements CharSequence, Appendable {
     public AppendableCharSequence append(char c) {
         if (pos == chars.length) {
             char[] old = chars;
-            // double it
-            int len = old.length << 1;
-            if (len < 0) {
-                throw new IllegalStateException();
-            }
-            chars = new char[len];
+            chars = new char[old.length << 1];
             System.arraycopy(old, 0, chars, 0, old.length);
         }
         chars[pos++] = c;
@@ -76,7 +94,8 @@ public final class AppendableCharSequence implements CharSequence, Appendable {
     @Override
     public AppendableCharSequence append(CharSequence csq, int start, int end) {
         if (csq.length() < end) {
-            throw new IndexOutOfBoundsException();
+            throw new IndexOutOfBoundsException("expected: csq.length() >= ("
+                    + end + "),but actual is (" + csq.length() + ")");
         }
         int length = end - start;
         if (length > chars.length - pos) {
@@ -116,9 +135,19 @@ public final class AppendableCharSequence implements CharSequence, Appendable {
     public String substring(int start, int end) {
         int length = end - start;
         if (start > pos || length > pos) {
-            throw new IndexOutOfBoundsException();
+            throw new IndexOutOfBoundsException("expected: start and length <= ("
+                    + pos + ")");
         }
         return new String(chars, start, length);
+    }
+
+    /**
+     * Create a new {@link String} from the given start to end.
+     * This method is considered unsafe as index values are assumed to be legitimate.
+     * Only underlying array bounds checking is done.
+     */
+    public String subStringUnsafe(int start, int end) {
+        return new String(chars, start, end - start);
     }
 
     private static char[] expand(char[] array, int neededSpace, int size) {

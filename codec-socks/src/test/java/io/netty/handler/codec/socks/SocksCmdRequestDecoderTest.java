@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,12 +16,17 @@
 package io.netty.handler.codec.socks;
 
 import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.util.internal.SocketUtils;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
-import org.junit.Test;
-import sun.net.util.IPAddressUtil;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import java.net.UnknownHostException;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SocksCmdRequestDecoderTest {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(SocksCmdRequestDecoderTest.class);
@@ -62,8 +67,8 @@ public class SocksCmdRequestDecoderTest {
     }
 
     @Test
-    public void testCmdRequestDecoderIPv6() {
-        String[] hosts = {SocksCommonUtils.ipv6toStr(IPAddressUtil.textToNumericFormatV6("::1"))};
+    public void testCmdRequestDecoderIPv6() throws UnknownHostException {
+        String[] hosts = {SocksCommonUtils.ipv6toStr(SocketUtils.addressByName("::1").getAddress())};
         int[] ports = {1, 32769, 65535};
         for (SocksCmdType cmdType : SocksCmdType.values()) {
             for (String host : hosts) {

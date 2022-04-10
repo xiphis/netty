@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,24 +15,30 @@
  */
 package io.netty.buffer;
 
-import org.easymock.EasyMock;
-import org.junit.After;
-import org.junit.Test;
+import io.netty.util.CharsetUtil;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
+import org.mockito.Mockito;
 
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.ScatteringByteChannel;
-import java.util.ArrayDeque;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Queue;
 
 import static io.netty.buffer.Unpooled.*;
 import static io.netty.util.internal.EmptyArrays.*;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Tests channel buffers
@@ -41,27 +47,6 @@ public class UnpooledTest {
 
     private static final ByteBuf[] EMPTY_BYTE_BUFS = new ByteBuf[0];
     private static final byte[][] EMPTY_BYTES_2D = new byte[0][];
-
-    private static final Queue<ByteBuf> freeLaterQueue = new ArrayDeque<ByteBuf>();
-
-    protected ByteBuf freeLater(ByteBuf buf) {
-        freeLaterQueue.add(buf);
-        return buf;
-    }
-
-    @After
-    public void tearDown() {
-        for (;;) {
-            ByteBuf buf = freeLaterQueue.poll();
-            if (buf == null) {
-                break;
-            }
-
-            if (buf.refCnt() > 0) {
-                buf.release(buf.refCnt());
-            }
-        }
-    }
 
     @Test
     public void testCompositeWrappedBuffer() {
@@ -95,9 +80,11 @@ public class UnpooledTest {
         map.put(new byte[] { -1, -1, -1, (byte) 0xE1 }, 1);
 
         for (Entry<byte[], Integer> e: map.entrySet()) {
+            ByteBuf buffer = wrappedBuffer(e.getKey());
             assertEquals(
                     e.getValue().intValue(),
-                    ByteBufUtil.hashCode(wrappedBuffer(e.getKey())));
+                    ByteBufUtil.hashCode(buffer));
+            buffer.release();
         }
     }
 
@@ -109,46 +96,64 @@ public class UnpooledTest {
         a = wrappedBuffer(new byte[] { 1  });
         b = wrappedBuffer(new byte[] { 1, 2 });
         assertFalse(ByteBufUtil.equals(a, b));
+        a.release();
+        b.release();
 
         // Same content, same firstIndex, short length.
         a = wrappedBuffer(new byte[] { 1, 2, 3 });
         b = wrappedBuffer(new byte[] { 1, 2, 3 });
         assertTrue(ByteBufUtil.equals(a, b));
+        a.release();
+        b.release();
 
         // Same content, different firstIndex, short length.
         a = wrappedBuffer(new byte[] { 1, 2, 3 });
         b = wrappedBuffer(new byte[] { 0, 1, 2, 3, 4 }, 1, 3);
         assertTrue(ByteBufUtil.equals(a, b));
+        a.release();
+        b.release();
 
         // Different content, same firstIndex, short length.
         a = wrappedBuffer(new byte[] { 1, 2, 3 });
         b = wrappedBuffer(new byte[] { 1, 2, 4 });
         assertFalse(ByteBufUtil.equals(a, b));
+        a.release();
+        b.release();
 
         // Different content, different firstIndex, short length.
         a = wrappedBuffer(new byte[] { 1, 2, 3 });
         b = wrappedBuffer(new byte[] { 0, 1, 2, 4, 5 }, 1, 3);
         assertFalse(ByteBufUtil.equals(a, b));
+        a.release();
+        b.release();
 
         // Same content, same firstIndex, long length.
         a = wrappedBuffer(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
         b = wrappedBuffer(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
         assertTrue(ByteBufUtil.equals(a, b));
+        a.release();
+        b.release();
 
         // Same content, different firstIndex, long length.
         a = wrappedBuffer(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
         b = wrappedBuffer(new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, 1, 10);
         assertTrue(ByteBufUtil.equals(a, b));
+        a.release();
+        b.release();
 
         // Different content, same firstIndex, long length.
         a = wrappedBuffer(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
         b = wrappedBuffer(new byte[] { 1, 2, 3, 4, 6, 7, 8, 5, 9, 10 });
         assertFalse(ByteBufUtil.equals(a, b));
+        a.release();
+        b.release();
 
         // Different content, different firstIndex, long length.
         a = wrappedBuffer(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
         b = wrappedBuffer(new byte[] { 0, 1, 2, 3, 4, 6, 7, 8, 5, 9, 10, 11 }, 1, 10);
         assertFalse(ByteBufUtil.equals(a, b));
+        a.release();
+        b.release();
     }
 
     @Test
@@ -182,50 +187,55 @@ public class UnpooledTest {
                 }
             }
         }
+        for (ByteBuf buffer: expected) {
+            buffer.release();
+        }
     }
 
     @Test
     public void shouldReturnEmptyBufferWhenLengthIsZero() {
-        assertSame(EMPTY_BUFFER, wrappedBuffer(EMPTY_BYTES));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(new byte[8], 0, 0));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(new byte[8], 8, 0));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(ByteBuffer.allocateDirect(0)));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(EMPTY_BUFFER));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(EMPTY_BYTES_2D));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(new byte[][] { EMPTY_BYTES }));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(EMPTY_BYTE_BUFFERS));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(new ByteBuffer[] { ByteBuffer.allocate(0) }));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(ByteBuffer.allocate(0), ByteBuffer.allocate(0)));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(EMPTY_BYTE_BUFS));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(new ByteBuf[] { buffer(0) }));
-        assertSame(EMPTY_BUFFER, wrappedBuffer(buffer(0), buffer(0)));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(EMPTY_BYTES));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(new byte[8], 0, 0));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(new byte[8], 8, 0));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(ByteBuffer.allocateDirect(0)));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(EMPTY_BUFFER));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(EMPTY_BYTES_2D));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(new byte[][] { EMPTY_BYTES }));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(EMPTY_BYTE_BUFFERS));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(new ByteBuffer[] { ByteBuffer.allocate(0) }));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(ByteBuffer.allocate(0), ByteBuffer.allocate(0)));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(EMPTY_BYTE_BUFS));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(new ByteBuf[] { buffer(0) }));
+        assertSameAndRelease(EMPTY_BUFFER, wrappedBuffer(buffer(0), buffer(0)));
 
-        assertSame(EMPTY_BUFFER, copiedBuffer(EMPTY_BYTES));
-        assertSame(EMPTY_BUFFER, copiedBuffer(new byte[8], 0, 0));
-        assertSame(EMPTY_BUFFER, copiedBuffer(new byte[8], 8, 0));
-        assertSame(EMPTY_BUFFER, copiedBuffer(ByteBuffer.allocateDirect(0)));
-        assertSame(EMPTY_BUFFER, copiedBuffer(EMPTY_BUFFER));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(EMPTY_BYTES));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(new byte[8], 0, 0));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(new byte[8], 8, 0));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(ByteBuffer.allocateDirect(0)));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(EMPTY_BUFFER));
         assertSame(EMPTY_BUFFER, copiedBuffer(EMPTY_BYTES_2D));
-        assertSame(EMPTY_BUFFER, copiedBuffer(new byte[][] { EMPTY_BYTES }));
-        assertSame(EMPTY_BUFFER, copiedBuffer(EMPTY_BYTE_BUFFERS));
-        assertSame(EMPTY_BUFFER, copiedBuffer(new ByteBuffer[] { ByteBuffer.allocate(0) }));
-        assertSame(EMPTY_BUFFER, copiedBuffer(ByteBuffer.allocate(0), ByteBuffer.allocate(0)));
-        assertSame(EMPTY_BUFFER, copiedBuffer(EMPTY_BYTE_BUFS));
-        assertSame(EMPTY_BUFFER, copiedBuffer(new ByteBuf[] { buffer(0) }));
-        assertSame(EMPTY_BUFFER, copiedBuffer(buffer(0), buffer(0)));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(new byte[][] { EMPTY_BYTES }));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(EMPTY_BYTE_BUFFERS));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(new ByteBuffer[] { ByteBuffer.allocate(0) }));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(ByteBuffer.allocate(0), ByteBuffer.allocate(0)));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(EMPTY_BYTE_BUFS));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(new ByteBuf[] { buffer(0) }));
+        assertSameAndRelease(EMPTY_BUFFER, copiedBuffer(buffer(0), buffer(0)));
     }
 
     @Test
     public void testCompare2() {
-        assertTrue(ByteBufUtil.compare(
-                wrappedBuffer(new byte[]{(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF}),
-                wrappedBuffer(new byte[]{(byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00}))
-                > 0);
+        ByteBuf expected = wrappedBuffer(new byte[]{(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF});
+        ByteBuf actual = wrappedBuffer(new byte[]{(byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00});
+        assertTrue(ByteBufUtil.compare(expected, actual) > 0);
+        expected.release();
+        actual.release();
 
-        assertTrue(ByteBufUtil.compare(
-                wrappedBuffer(new byte[]{(byte) 0xFF}),
-                wrappedBuffer(new byte[]{(byte) 0x00}))
-                > 0);
+        expected = wrappedBuffer(new byte[]{(byte) 0xFF});
+        actual = wrappedBuffer(new byte[]{(byte) 0x00});
+        assertTrue(ByteBufUtil.compare(expected, actual) > 0);
+        expected.release();
+        actual.release();
     }
 
     @Test
@@ -243,102 +253,147 @@ public class UnpooledTest {
 
     @Test
     public void testWrappedBuffer() {
-        assertEquals(16, freeLater(wrappedBuffer(ByteBuffer.allocateDirect(16))).capacity());
+        ByteBuf buffer = wrappedBuffer(ByteBuffer.allocateDirect(16));
+        assertEquals(16, buffer.capacity());
+        buffer.release();
 
-        assertEquals(
+        assertEqualsAndRelease(
                 wrappedBuffer(new byte[] { 1, 2, 3 }),
                 wrappedBuffer(new byte[][] { new byte[] { 1, 2, 3 } }));
 
-        assertEquals(
+        assertEqualsAndRelease(
                 wrappedBuffer(new byte[] { 1, 2, 3 }),
-                freeLater(wrappedBuffer(
-                        new byte[] { 1 },
-                        new byte[] { 2 },
-                        new byte[] { 3 })));
+                wrappedBuffer(new byte[] { 1 }, new byte[] { 2 }, new byte[] { 3 }));
 
-        assertEquals(
-                wrappedBuffer(new byte[] { 1, 2, 3 }),
-                wrappedBuffer(new ByteBuf[] {
-                        wrappedBuffer(new byte[] { 1, 2, 3 })
-                }));
+        assertEqualsAndRelease(wrappedBuffer(new byte[] { 1, 2, 3 }),
+                wrappedBuffer(new ByteBuf[] { wrappedBuffer(new byte[] { 1, 2, 3 }) }));
 
-        assertEquals(
+        assertEqualsAndRelease(
                 wrappedBuffer(new byte[] { 1, 2, 3 }),
-                freeLater(wrappedBuffer(
-                        wrappedBuffer(new byte[] { 1 }),
-                        wrappedBuffer(new byte[] { 2 }),
-                        wrappedBuffer(new byte[] { 3 }))));
+                wrappedBuffer(wrappedBuffer(new byte[] { 1 }),
+                        wrappedBuffer(new byte[] { 2 }), wrappedBuffer(new byte[] { 3 })));
 
-        assertEquals(
-                wrappedBuffer(new byte[] { 1, 2, 3 }),
-                wrappedBuffer(new ByteBuffer[] {
-                        ByteBuffer.wrap(new byte[] { 1, 2, 3 })
-                }));
+        assertEqualsAndRelease(wrappedBuffer(new byte[] { 1, 2, 3 }),
+                wrappedBuffer(new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 1, 2, 3 }) }));
 
-        assertEquals(
-                wrappedBuffer(new byte[] { 1, 2, 3 }),
-                freeLater(wrappedBuffer(
-                        ByteBuffer.wrap(new byte[] { 1 }),
-                        ByteBuffer.wrap(new byte[] { 2 }),
-                        ByteBuffer.wrap(new byte[] { 3 }))));
+        assertEqualsAndRelease(wrappedBuffer(new byte[] { 1, 2, 3 }),
+                wrappedBuffer(ByteBuffer.wrap(new byte[] { 1 }),
+                ByteBuffer.wrap(new byte[] { 2 }), ByteBuffer.wrap(new byte[] { 3 })));
+    }
+
+    @Test
+    public void testSingleWrappedByteBufReleased() {
+        ByteBuf buf = buffer(12).writeByte(0);
+        ByteBuf wrapped = wrappedBuffer(buf);
+        assertTrue(wrapped.release());
+        assertEquals(0, buf.refCnt());
+    }
+
+    @Test
+    public void testSingleUnReadableWrappedByteBufReleased() {
+        ByteBuf buf = buffer(12);
+        ByteBuf wrapped = wrappedBuffer(buf);
+        assertFalse(wrapped.release()); // EMPTY_BUFFER cannot be released
+        assertEquals(0, buf.refCnt());
+    }
+
+    @Test
+    public void testMultiByteBufReleased() {
+        ByteBuf buf1 = buffer(12).writeByte(0);
+        ByteBuf buf2 = buffer(12).writeByte(0);
+        ByteBuf wrapped = wrappedBuffer(16, buf1, buf2);
+        assertTrue(wrapped.release());
+        assertEquals(0, buf1.refCnt());
+        assertEquals(0, buf2.refCnt());
+    }
+
+    @Test
+    public void testMultiUnReadableByteBufReleased() {
+        ByteBuf buf1 = buffer(12);
+        ByteBuf buf2 = buffer(12);
+        ByteBuf wrapped = wrappedBuffer(16, buf1, buf2);
+        assertFalse(wrapped.release()); // EMPTY_BUFFER cannot be released
+        assertEquals(0, buf1.refCnt());
+        assertEquals(0, buf2.refCnt());
+    }
+
+    @Test
+    public void testCopiedBufferUtf8() {
+        testCopiedBufferCharSequence("Some UTF_8 like äÄ∏ŒŒ", CharsetUtil.UTF_8);
+    }
+
+    @Test
+    public void testCopiedBufferAscii() {
+        testCopiedBufferCharSequence("Some US_ASCII", CharsetUtil.US_ASCII);
+    }
+
+    @Test
+    public void testCopiedBufferSomeOtherCharset() {
+        testCopiedBufferCharSequence("Some ISO_8859_1", CharsetUtil.ISO_8859_1);
+    }
+
+    private static void testCopiedBufferCharSequence(CharSequence sequence, Charset charset) {
+        ByteBuf copied = copiedBuffer(sequence, charset);
+        try {
+            assertEquals(sequence, copied.toString(charset));
+        } finally {
+            copied.release();
+        }
     }
 
     @Test
     public void testCopiedBuffer() {
-        assertEquals(16, copiedBuffer(ByteBuffer.allocateDirect(16)).capacity());
+        ByteBuf copied = copiedBuffer(ByteBuffer.allocateDirect(16));
+        assertEquals(16, copied.capacity());
+        copied.release();
 
-        assertEquals(
-                wrappedBuffer(new byte[] { 1, 2, 3 }),
+        assertEqualsAndRelease(wrappedBuffer(new byte[] { 1, 2, 3 }),
                 copiedBuffer(new byte[][] { new byte[] { 1, 2, 3 } }));
 
-        assertEquals(
-                wrappedBuffer(new byte[] { 1, 2, 3 }),
-                copiedBuffer(
-                        new byte[] { 1 },
-                        new byte[] { 2 },
-                        new byte[] { 3 }));
+        assertEqualsAndRelease(wrappedBuffer(new byte[] { 1, 2, 3 }),
+                copiedBuffer(new byte[] { 1 }, new byte[] { 2 }, new byte[] { 3 }));
 
-        assertEquals(
-                wrappedBuffer(new byte[] { 1, 2, 3 }),
-                copiedBuffer(new ByteBuf[] {
-                        wrappedBuffer(new byte[] { 1, 2, 3 })
-                }));
+        assertEqualsAndRelease(wrappedBuffer(new byte[] { 1, 2, 3 }),
+                copiedBuffer(new ByteBuf[] { wrappedBuffer(new byte[] { 1, 2, 3 })}));
 
-        assertEquals(
-                wrappedBuffer(new byte[] { 1, 2, 3 }),
-                copiedBuffer(
-                        wrappedBuffer(new byte[] { 1 }),
-                        wrappedBuffer(new byte[] { 2 }),
-                        wrappedBuffer(new byte[] { 3 })));
+        assertEqualsAndRelease(wrappedBuffer(new byte[] { 1, 2, 3 }),
+                copiedBuffer(wrappedBuffer(new byte[] { 1 }),
+                        wrappedBuffer(new byte[] { 2 }), wrappedBuffer(new byte[] { 3 })));
 
-        assertEquals(
-                wrappedBuffer(new byte[] { 1, 2, 3 }),
-                copiedBuffer(new ByteBuffer[] {
-                        ByteBuffer.wrap(new byte[] { 1, 2, 3 })
-                }));
+        assertEqualsAndRelease(wrappedBuffer(new byte[] { 1, 2, 3 }),
+                copiedBuffer(new ByteBuffer[] { ByteBuffer.wrap(new byte[] { 1, 2, 3 }) }));
 
-        assertEquals(
-                wrappedBuffer(new byte[] { 1, 2, 3 }),
-                copiedBuffer(
-                        ByteBuffer.wrap(new byte[] { 1 }),
-                        ByteBuffer.wrap(new byte[] { 2 }),
-                        ByteBuffer.wrap(new byte[] { 3 })));
+        assertEqualsAndRelease(wrappedBuffer(new byte[] { 1, 2, 3 }),
+                copiedBuffer(ByteBuffer.wrap(new byte[] { 1 }),
+                        ByteBuffer.wrap(new byte[] { 2 }), ByteBuffer.wrap(new byte[] { 3 })));
+    }
+
+    private static void assertEqualsAndRelease(ByteBuf expected, ByteBuf actual) {
+        assertEquals(expected, actual);
+        expected.release();
+        actual.release();
+    }
+
+    private static void assertSameAndRelease(ByteBuf expected, ByteBuf actual) {
+        assertEquals(expected, actual);
+        expected.release();
+        actual.release();
     }
 
     @Test
     public void testHexDump() {
         assertEquals("", ByteBufUtil.hexDump(EMPTY_BUFFER));
 
-        assertEquals("123456", ByteBufUtil.hexDump(wrappedBuffer(
-                new byte[]{
-                        0x12, 0x34, 0x56
-                })));
+        ByteBuf buffer = wrappedBuffer(new byte[]{ 0x12, 0x34, 0x56 });
+        assertEquals("123456", ByteBufUtil.hexDump(buffer));
+        buffer.release();
 
-        assertEquals("1234567890abcdef", ByteBufUtil.hexDump(wrappedBuffer(
-                new byte[]{
-                        0x12, 0x34, 0x56, 0x78,
-                        (byte) 0x90, (byte) 0xAB, (byte) 0xCD, (byte) 0xEF
-                })));
+        buffer = wrappedBuffer(new byte[]{
+                0x12, 0x34, 0x56, 0x78,
+                (byte) 0x90, (byte) 0xAB, (byte) 0xCD, (byte) 0xEF
+        });
+        assertEquals("1234567890abcdef", ByteBufUtil.hexDump(buffer));
+        buffer.release();
     }
 
     @Test
@@ -414,19 +469,24 @@ public class UnpooledTest {
             // Expected
         }
 
+        InputStream inputStream = Mockito.mock(InputStream.class);
         try {
-            buf.setBytes(0, EasyMock.createMock(InputStream.class), 0);
+            buf.setBytes(0, inputStream, 0);
             fail();
         } catch (UnsupportedOperationException e) {
             // Expected
         }
+        Mockito.verifyZeroInteractions(inputStream);
 
+        ScatteringByteChannel scatteringByteChannel = Mockito.mock(ScatteringByteChannel.class);
         try {
-            buf.setBytes(0, EasyMock.createMock(ScatteringByteChannel.class), 0);
+            buf.setBytes(0, scatteringByteChannel, 0);
             fail();
         } catch (UnsupportedOperationException e) {
             // Expected
         }
+        Mockito.verifyZeroInteractions(scatteringByteChannel);
+        buf.release();
     }
 
     @Test
@@ -435,6 +495,7 @@ public class UnpooledTest {
         assertEquals(4, buffer.capacity());
         assertEquals(42, buffer.readInt());
         assertFalse(buffer.isReadable());
+        buffer.release();
     }
 
     @Test
@@ -444,9 +505,15 @@ public class UnpooledTest {
         assertEquals(1, buffer.readInt());
         assertEquals(4, buffer.readInt());
         assertFalse(buffer.isReadable());
+        buffer.release();
 
-        assertEquals(0, copyInt(null).capacity());
-        assertEquals(0, copyInt(EMPTY_INTS).capacity());
+        buffer = copyInt(null);
+        assertEquals(0, buffer.capacity());
+        buffer.release();
+
+        buffer = copyInt(new int[] {});
+        assertEquals(0, buffer.capacity());
+        buffer.release();
     }
 
     @Test
@@ -455,6 +522,7 @@ public class UnpooledTest {
         assertEquals(2, buffer.capacity());
         assertEquals(42, buffer.readShort());
         assertFalse(buffer.isReadable());
+        buffer.release();
     }
 
     @Test
@@ -464,9 +532,15 @@ public class UnpooledTest {
         assertEquals(1, buffer.readShort());
         assertEquals(4, buffer.readShort());
         assertFalse(buffer.isReadable());
+        buffer.release();
 
-        assertEquals(0, copyShort((short[]) null).capacity());
-        assertEquals(0, copyShort(EMPTY_SHORTS).capacity());
+        buffer = copyShort((short[]) null);
+        assertEquals(0, buffer.capacity());
+        buffer.release();
+
+        buffer = copyShort(new short[] {});
+        assertEquals(0, buffer.capacity());
+        buffer.release();
     }
 
     @Test
@@ -476,9 +550,15 @@ public class UnpooledTest {
         assertEquals(1, buffer.readShort());
         assertEquals(4, buffer.readShort());
         assertFalse(buffer.isReadable());
+        buffer.release();
 
-        assertEquals(0, copyShort((int[]) null).capacity());
-        assertEquals(0, copyShort(EMPTY_INTS).capacity());
+        buffer = copyShort((int[]) null);
+        assertEquals(0, buffer.capacity());
+        buffer.release();
+
+        buffer = copyShort(new int[] {});
+        assertEquals(0, buffer.capacity());
+        buffer.release();
     }
 
     @Test
@@ -487,6 +567,7 @@ public class UnpooledTest {
         assertEquals(3, buffer.capacity());
         assertEquals(42, buffer.readMedium());
         assertFalse(buffer.isReadable());
+        buffer.release();
     }
 
     @Test
@@ -496,9 +577,15 @@ public class UnpooledTest {
         assertEquals(1, buffer.readMedium());
         assertEquals(4, buffer.readMedium());
         assertFalse(buffer.isReadable());
+        buffer.release();
 
+        buffer = copyMedium(null);
         assertEquals(0, copyMedium(null).capacity());
-        assertEquals(0, copyMedium(EMPTY_INTS).capacity());
+        buffer.release();
+
+        buffer = copyMedium(new int[] {});
+        assertEquals(0, buffer.capacity());
+        buffer.release();
     }
 
     @Test
@@ -507,6 +594,7 @@ public class UnpooledTest {
         assertEquals(8, buffer.capacity());
         assertEquals(42, buffer.readLong());
         assertFalse(buffer.isReadable());
+        buffer.release();
     }
 
     @Test
@@ -516,9 +604,15 @@ public class UnpooledTest {
         assertEquals(1, buffer.readLong());
         assertEquals(4, buffer.readLong());
         assertFalse(buffer.isReadable());
+        buffer.release();
 
-        assertEquals(0, copyLong(null).capacity());
-        assertEquals(0, copyLong(EMPTY_LONGS).capacity());
+        buffer = copyLong(null);
+        assertEquals(0, buffer.capacity());
+        buffer.release();
+
+        buffer = copyLong(new long[] {});
+        assertEquals(0, buffer.capacity());
+        buffer.release();
     }
 
     @Test
@@ -527,6 +621,7 @@ public class UnpooledTest {
         assertEquals(4, buffer.capacity());
         assertEquals(42, buffer.readFloat(), 0.01);
         assertFalse(buffer.isReadable());
+        buffer.release();
     }
 
     @Test
@@ -536,9 +631,15 @@ public class UnpooledTest {
         assertEquals(1, buffer.readFloat(), 0.01);
         assertEquals(4, buffer.readFloat(), 0.01);
         assertFalse(buffer.isReadable());
+        buffer.release();
 
-        assertEquals(0, copyFloat(null).capacity());
-        assertEquals(0, copyFloat(EMPTY_FLOATS).capacity());
+        buffer = copyFloat(null);
+        assertEquals(0, buffer.capacity());
+        buffer.release();
+
+        buffer = copyFloat(new float[] {});
+        assertEquals(0, buffer.capacity());
+        buffer.release();
     }
 
     @Test
@@ -547,6 +648,7 @@ public class UnpooledTest {
         assertEquals(8, buffer.capacity());
         assertEquals(42, buffer.readDouble(), 0.01);
         assertFalse(buffer.isReadable());
+        buffer.release();
     }
 
     @Test
@@ -556,9 +658,15 @@ public class UnpooledTest {
         assertEquals(1, buffer.readDouble(), 0.01);
         assertEquals(4, buffer.readDouble(), 0.01);
         assertFalse(buffer.isReadable());
+        buffer.release();
 
-        assertEquals(0, copyDouble(null).capacity());
-        assertEquals(0, copyDouble(EMPTY_DOUBLES).capacity());
+        buffer = copyDouble(null);
+        assertEquals(0, buffer.capacity());
+        buffer.release();
+
+        buffer = copyDouble(new double[] {});
+        assertEquals(0, buffer.capacity());
+        buffer.release();
     }
 
     @Test
@@ -568,9 +676,15 @@ public class UnpooledTest {
         assertTrue(buffer.readBoolean());
         assertFalse(buffer.readBoolean());
         assertFalse(buffer.isReadable());
+        buffer.release();
 
-        assertEquals(0, copyBoolean(null).capacity());
-        assertEquals(0, copyBoolean(EMPTY_BOOLEANS).capacity());
+        buffer = copyBoolean(null);
+        assertEquals(0, buffer.capacity());
+        buffer.release();
+
+        buffer = copyBoolean(new boolean[] {});
+        assertEquals(0, buffer.capacity());
+        buffer.release();
     }
 
     @Test
@@ -587,9 +701,121 @@ public class UnpooledTest {
         wrapped.release();
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void skipBytesNegativeLength() {
-        ByteBuf buf = freeLater(buffer(8));
-        buf.skipBytes(-1);
+        final ByteBuf buf = buffer(8);
+        try {
+            assertThrows(IllegalArgumentException.class, new Executable() {
+                @Override
+                public void execute() throws Throwable {
+                    buf.skipBytes(-1);
+                }
+            });
+        } finally {
+            buf.release();
+        }
+    }
+
+    // See https://github.com/netty/netty/issues/5597
+    @Test
+    public void testWrapByteBufArrayStartsWithNonReadable() {
+        ByteBuf buffer1 = buffer(8);
+        ByteBuf buffer2 = buffer(8).writeZero(8); // Ensure the ByteBuf is readable.
+        ByteBuf buffer3 = buffer(8);
+        ByteBuf buffer4 = buffer(8).writeZero(8); // Ensure the ByteBuf is readable.
+
+        ByteBuf wrapped = wrappedBuffer(buffer1, buffer2, buffer3, buffer4);
+        assertEquals(16, wrapped.readableBytes());
+        assertTrue(wrapped.release());
+        assertEquals(0, buffer1.refCnt());
+        assertEquals(0, buffer2.refCnt());
+        assertEquals(0, buffer3.refCnt());
+        assertEquals(0, buffer4.refCnt());
+        assertEquals(0, wrapped.refCnt());
+    }
+
+    @Test
+    public void testGetBytesByteBuffer() {
+        byte[] bytes = {'a', 'b', 'c', 'd', 'e', 'f', 'g'};
+        // Ensure destination buffer is bigger then what is wrapped in the ByteBuf.
+        final ByteBuffer nioBuffer = ByteBuffer.allocate(bytes.length + 1);
+        final ByteBuf wrappedBuffer = wrappedBuffer(bytes);
+        try {
+            assertThrows(IndexOutOfBoundsException.class, new Executable() {
+                @Override
+                public void execute() throws Throwable {
+                    wrappedBuffer.getBytes(wrappedBuffer.readerIndex(), nioBuffer);
+                }
+            });
+        } finally {
+            wrappedBuffer.release();
+        }
+    }
+
+    @Test
+    public void testGetBytesByteBuffer2() {
+        byte[] bytes = {'a', 'b', 'c', 'd', 'e', 'f', 'g'};
+        // Ensure destination buffer is bigger then what is wrapped in the ByteBuf.
+        final ByteBuffer nioBuffer = ByteBuffer.allocate(bytes.length + 1);
+        final ByteBuf wrappedBuffer = wrappedBuffer(bytes, 0, bytes.length);
+        try {
+            assertThrows(IndexOutOfBoundsException.class, new Executable() {
+                @Override
+                public void execute() throws Throwable {
+                    wrappedBuffer.getBytes(wrappedBuffer.readerIndex(), nioBuffer);
+                }
+            });
+        } finally {
+            wrappedBuffer.release();
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    @Test
+    public void littleEndianWriteOnLittleEndianBufferMustStoreLittleEndianValue() {
+        ByteBuf b = buffer(1024).order(ByteOrder.LITTLE_ENDIAN);
+
+        b.writeShortLE(0x0102);
+        assertEquals((short) 0x0102, b.getShortLE(0));
+        assertEquals((short) 0x0102, b.getShort(0));
+        b.clear();
+
+        b.writeMediumLE(0x010203);
+        assertEquals(0x010203, b.getMediumLE(0));
+        assertEquals(0x010203, b.getMedium(0));
+        b.clear();
+
+        b.writeIntLE(0x01020304);
+        assertEquals(0x01020304, b.getIntLE(0));
+        assertEquals(0x01020304, b.getInt(0));
+        b.clear();
+
+        b.writeLongLE(0x0102030405060708L);
+        assertEquals(0x0102030405060708L, b.getLongLE(0));
+        assertEquals(0x0102030405060708L, b.getLong(0));
+    }
+
+    @Test
+    public void littleEndianWriteOnDefaultBufferMustStoreLittleEndianValue() {
+        ByteBuf b = buffer(1024);
+
+        b.writeShortLE(0x0102);
+        assertEquals((short) 0x0102, b.getShortLE(0));
+        assertEquals((short) 0x0201, b.getShort(0));
+        b.clear();
+
+        b.writeMediumLE(0x010203);
+        assertEquals(0x010203, b.getMediumLE(0));
+        assertEquals(0x030201, b.getMedium(0));
+        b.clear();
+
+        b.writeIntLE(0x01020304);
+        assertEquals(0x01020304, b.getIntLE(0));
+        assertEquals(0x04030201, b.getInt(0));
+        b.clear();
+
+        b.writeLongLE(0x0102030405060708L);
+        assertEquals(0x0102030405060708L, b.getLongLE(0));
+        assertEquals(0x0807060504030201L, b.getLong(0));
     }
 }

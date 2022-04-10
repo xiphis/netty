@@ -6,7 +6,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -78,7 +78,7 @@ public final class CaliperRunner {
     public static Run execute(final String name,
             final Class<? extends CaliperBench> klaz) throws Exception {
 
-        final CaliperBench booter = klaz.newInstance();
+        final CaliperBench booter = klaz.getConstructor().newInstance();
 
         final List<Map<String, String>> varsSet = product(booter);
 
@@ -186,7 +186,7 @@ public final class CaliperRunner {
     }
 
     /**
-     * Publish result on http://microbenchmarks.appspot.com
+     * Publish result on https://microbenchmarks.appspot.com
      */
     public static void publish(final Result result) throws Exception {
         final Runner runner = new Runner();

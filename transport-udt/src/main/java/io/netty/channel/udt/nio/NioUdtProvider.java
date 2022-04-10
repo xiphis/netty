@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -23,11 +23,11 @@ import com.barchart.udt.nio.RendezvousChannelUDT;
 import com.barchart.udt.nio.SelectorProviderUDT;
 import com.barchart.udt.nio.ServerSocketChannelUDT;
 import com.barchart.udt.nio.SocketChannelUDT;
-import io.netty.bootstrap.ChannelFactory;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelException;
-import io.netty.channel.udt.UdtServerChannel;
+import io.netty.channel.ChannelFactory;
 import io.netty.channel.udt.UdtChannel;
+import io.netty.channel.udt.UdtServerChannel;
 
 import java.io.IOException;
 import java.nio.channels.spi.SelectorProvider;
@@ -38,7 +38,10 @@ import java.nio.channels.spi.SelectorProvider;
  * Provides {@link ChannelFactory} for UDT channels.
  * <p>
  * Provides {@link SelectorProvider} for UDT channels.
+ *
+ * @deprecated The UDT transport is no longer maintained and will be removed.
  */
+@Deprecated
 public final class NioUdtProvider<T extends UdtChannel> implements ChannelFactory<T> {
 
     /**
@@ -106,22 +109,24 @@ public final class NioUdtProvider<T extends UdtChannel> implements ChannelFactor
         if (channel instanceof NioUdtByteAcceptorChannel) {
             return ((NioUdtByteAcceptorChannel) channel).javaChannel();
         }
-        if (channel instanceof NioUdtByteConnectorChannel) {
-            return ((NioUdtByteConnectorChannel) channel).javaChannel();
-        }
         if (channel instanceof NioUdtByteRendezvousChannel) {
             return ((NioUdtByteRendezvousChannel) channel).javaChannel();
         }
+        if (channel instanceof NioUdtByteConnectorChannel) {
+            return ((NioUdtByteConnectorChannel) channel).javaChannel();
+        }
+
         // message
         if (channel instanceof NioUdtMessageAcceptorChannel) {
             return ((NioUdtMessageAcceptorChannel) channel).javaChannel();
         }
-        if (channel instanceof NioUdtMessageConnectorChannel) {
-            return ((NioUdtMessageConnectorChannel) channel).javaChannel();
-        }
         if (channel instanceof NioUdtMessageRendezvousChannel) {
             return ((NioUdtMessageRendezvousChannel) channel).javaChannel();
         }
+        if (channel instanceof NioUdtMessageConnectorChannel) {
+            return ((NioUdtMessageConnectorChannel) channel).javaChannel();
+        }
+
         return null;
     }
 

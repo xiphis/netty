@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,69 +16,53 @@
 
 package io.netty.handler.codec.stomp;
 
-import io.netty.handler.codec.DefaultTextHeaders;
-import io.netty.handler.codec.TextHeaderProcessor;
-import io.netty.handler.codec.TextHeaders;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map.Entry;
 
-public class DefaultStompHeaders extends DefaultTextHeaders implements StompHeaders {
+import io.netty.handler.codec.CharSequenceValueConverter;
+import io.netty.handler.codec.DefaultHeaders;
+import io.netty.handler.codec.HeadersUtils;
 
-    @Override
-    public StompHeaders add(CharSequence name, Object value) {
-        super.add(name, value);
-        return this;
+import static io.netty.util.AsciiString.CASE_INSENSITIVE_HASHER;
+import static io.netty.util.AsciiString.CASE_SENSITIVE_HASHER;
+
+public class DefaultStompHeaders
+        extends DefaultHeaders<CharSequence, CharSequence, StompHeaders> implements StompHeaders {
+    public DefaultStompHeaders() {
+        super(CASE_SENSITIVE_HASHER, CharSequenceValueConverter.INSTANCE);
     }
 
     @Override
-    public StompHeaders add(CharSequence name, Iterable<?> values) {
-        super.add(name, values);
-        return this;
+    public String getAsString(CharSequence name) {
+        return HeadersUtils.getAsString(this, name);
     }
 
     @Override
-    public StompHeaders add(CharSequence name, Object... values) {
-        super.add(name, values);
-        return this;
+    public List<String> getAllAsString(CharSequence name) {
+        return HeadersUtils.getAllAsString(this, name);
     }
 
     @Override
-    public StompHeaders add(TextHeaders headers) {
-        super.add(headers);
-        return this;
+    public Iterator<Entry<String, String>> iteratorAsString() {
+        return HeadersUtils.iteratorAsString(this);
     }
 
     @Override
-    public StompHeaders set(CharSequence name, Object value) {
-        super.set(name, value);
-        return this;
+    public boolean contains(CharSequence name, CharSequence value) {
+        return contains(name, value, false);
     }
 
     @Override
-    public StompHeaders set(CharSequence name, Object... values) {
-        super.set(name, values);
-        return this;
+    public boolean contains(CharSequence name, CharSequence value, boolean ignoreCase) {
+        return contains(name, value,
+                ignoreCase ? CASE_INSENSITIVE_HASHER : CASE_SENSITIVE_HASHER);
     }
 
     @Override
-    public StompHeaders set(CharSequence name, Iterable<?> values) {
-        super.set(name, values);
-        return this;
-    }
-
-    @Override
-    public StompHeaders set(TextHeaders headers) {
-        super.set(headers);
-        return this;
-    }
-
-    @Override
-    public StompHeaders clear() {
-        super.clear();
-        return this;
-    }
-
-    @Override
-    public StompHeaders forEachEntry(TextHeaderProcessor processor) {
-        super.forEachEntry(processor);
-        return this;
+    public DefaultStompHeaders copy() {
+        DefaultStompHeaders copyHeaders = new DefaultStompHeaders();
+        copyHeaders.addImpl(this);
+        return copyHeaders;
     }
 }

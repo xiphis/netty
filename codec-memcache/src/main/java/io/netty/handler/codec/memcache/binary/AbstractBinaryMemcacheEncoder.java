@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -19,22 +19,24 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToByteEncoder;
 import io.netty.handler.codec.memcache.AbstractMemcacheObjectEncoder;
-import io.netty.util.CharsetUtil;
+import io.netty.util.internal.UnstableApi;
 
 /**
- * A {@link MessageToByteEncoder} that encodes binary memache messages into bytes.
+ * A {@link MessageToByteEncoder} that encodes binary memcache messages into bytes.
  */
+@UnstableApi
 public abstract class AbstractBinaryMemcacheEncoder<M extends BinaryMemcacheMessage>
     extends AbstractMemcacheObjectEncoder<M> {
 
     /**
      * Every binary memcache message has at least a 24 bytes header.
      */
-    private static final int DEFAULT_BUFFER_SIZE = 24;
+    private static final int MINIMUM_HEADER_SIZE = 24;
 
     @Override
     protected ByteBuf encodeMessage(ChannelHandlerContext ctx, M msg) {
-        ByteBuf buf = ctx.alloc().buffer(DEFAULT_BUFFER_SIZE);
+        ByteBuf buf = ctx.alloc().buffer(MINIMUM_HEADER_SIZE + msg.extrasLength()
+            + msg.keyLength());
 
         encodeHeader(buf, msg);
         encodeExtras(buf, msg.extras());
@@ -63,12 +65,12 @@ public abstract class AbstractBinaryMemcacheEncoder<M extends BinaryMemcacheMess
      * @param buf the {@link ByteBuf} to write into.
      * @param key the key to encode.
      */
-    private static void encodeKey(ByteBuf buf, String key) {
-        if (key == null || key.isEmpty()) {
+    private static void encodeKey(ByteBuf buf, ByteBuf key) {
+        if (key == null || !key.isReadable()) {
             return;
         }
 
-        buf.writeBytes(key.getBytes(CharsetUtil.UTF_8));
+        buf.writeBytes(key);
     }
 
     /**

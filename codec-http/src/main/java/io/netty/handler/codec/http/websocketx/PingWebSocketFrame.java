@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -19,7 +19,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 /**
- * Web Socket frame containing binary data
+ * Web Socket frame containing binary data.
  */
 public class PingWebSocketFrame extends WebSocketFrame {
 
@@ -41,7 +41,7 @@ public class PingWebSocketFrame extends WebSocketFrame {
     }
 
     /**
-     * Creates a new ping frame with the specified binary data
+     * Creates a new ping frame with the specified binary data.
      *
      * @param finalFragment
      *            flag indicating if this frame is the final fragment
@@ -56,12 +56,22 @@ public class PingWebSocketFrame extends WebSocketFrame {
 
     @Override
     public PingWebSocketFrame copy() {
-        return new PingWebSocketFrame(isFinalFragment(), rsv(), content().copy());
+        return (PingWebSocketFrame) super.copy();
     }
 
     @Override
     public PingWebSocketFrame duplicate() {
-        return new PingWebSocketFrame(isFinalFragment(), rsv(), content().duplicate());
+        return (PingWebSocketFrame) super.duplicate();
+    }
+
+    @Override
+    public PingWebSocketFrame retainedDuplicate() {
+        return (PingWebSocketFrame) super.retainedDuplicate();
+    }
+
+    @Override
+    public PingWebSocketFrame replace(ByteBuf content) {
+        return new PingWebSocketFrame(isFinalFragment(), rsv(), content);
     }
 
     @Override

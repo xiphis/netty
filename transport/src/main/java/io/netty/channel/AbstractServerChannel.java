@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -14,8 +14,6 @@
  * under the License.
  */
 package io.netty.channel;
-
-import io.netty.util.ReferenceCountUtil;
 
 import java.net.SocketAddress;
 
@@ -31,8 +29,7 @@ import java.net.SocketAddress;
  * </ul>
  */
 public abstract class AbstractServerChannel extends AbstractChannel implements ServerChannel {
-
-    private static final ChannelMetadata METADATA = new ChannelMetadata(false);
+    private static final ChannelMetadata METADATA = new ChannelMetadata(false, 16);
 
     /**
      * Creates a new instance.
@@ -71,24 +68,14 @@ public abstract class AbstractServerChannel extends AbstractChannel implements S
         throw new UnsupportedOperationException();
     }
 
+    @Override
+    protected final Object filterOutboundMessage(Object msg) {
+        throw new UnsupportedOperationException();
+    }
+
     private final class DefaultServerUnsafe extends AbstractUnsafe {
         @Override
-        public void write(Object msg, ChannelPromise promise) {
-            ReferenceCountUtil.release(msg);
-            reject(promise);
-        }
-
-        @Override
-        public void flush() {
-            // ignore
-        }
-
-        @Override
         public void connect(SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) {
-            reject(promise);
-        }
-
-        private void reject(ChannelPromise promise) {
             safeSetFailure(promise, new UnsupportedOperationException());
         }
     }

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,9 +15,12 @@
  */
 package io.netty.handler.codec.http;
 
-import org.junit.Test;
+import io.netty.util.AsciiString;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.*;
+import static io.netty.handler.codec.http.HttpHeadersTestUtils.of;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class DefaultHttpRequestTest {
 
@@ -28,17 +31,17 @@ public class DefaultHttpRequestTest {
 
         // Insert sample keys.
         for (int i = 0; i < 1000; i ++) {
-            h.set(String.valueOf(i), "");
+            h.set(of(String.valueOf(i)), AsciiString.EMPTY_STRING);
         }
 
         // Remove in reversed order.
         for (int i = 999; i >= 0; i --) {
-            h.remove(String.valueOf(i));
+            h.remove(of(String.valueOf(i)));
         }
 
         // Check if random access returns nothing.
         for (int i = 0; i < 1000; i ++) {
-            assertNull(h.get(String.valueOf(i)));
+            assertNull(h.get(of(String.valueOf(i))));
         }
 
         // Check if sequential access returns nothing.

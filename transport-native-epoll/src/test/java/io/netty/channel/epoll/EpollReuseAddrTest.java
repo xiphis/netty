@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -23,14 +23,17 @@ import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerAdapter;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import io.netty.testsuite.util.TestUtils;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
 import io.netty.util.NetUtil;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.ResourceLeakDetector;
-import io.netty.util.internal.StringUtil;
-import org.junit.Assert;
-import org.junit.Assume;
-import org.junit.Test;
+import io.netty.util.internal.logging.InternalLogLevel;
+import io.netty.util.internal.logging.InternalLogger;
+import io.netty.util.internal.logging.InternalLoggerFactory;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -40,59 +43,80 @@ import java.net.Socket;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
 public class EpollReuseAddrTest {
+    private static final InternalLogger LOGGER = InternalLoggerFactory.getInstance(EpollReuseAddrTest.class);
+
     private static final int MAJOR;
     private static final int MINOR;
     private static final int BUGFIX;
     static {
-        String kernelVersion = Native.kernelVersion();
+        String kernelVersion = Native.KERNEL_VERSION;
         int index = kernelVersion.indexOf('-');
         if (index > -1) {
             kernelVersion = kernelVersion.substring(0, index);
         }
-        String[] versionParts = StringUtil.split(kernelVersion, '.');
+        String[] versionParts = kernelVersion.split("\\.");
         if (versionParts.length <= 3) {
             MAJOR = Integer.parseInt(versionParts[0]);
             MINOR = Integer.parseInt(versionParts[1]);
             if (versionParts.length == 3) {
-                BUGFIX = Integer.parseInt(versionParts[2]);
+                int bugFix;
+                try {
+                    bugFix = Integer.parseInt(versionParts[2]);
+                } catch (NumberFormatException ignore) {
+                    // the last part of the version may include all kind of different things. Especially when
+                    // someone compiles his / her own kernel.
+                    // Just ignore a parse error here and use 0.
+                    bugFix = 0;
+                }
+                BUGFIX = bugFix;
             } else {
                 BUGFIX = 0;
             }
         } else {
-            throw new IllegalStateException("Can not parse kernel version " + kernelVersion);
+            LOGGER.log(InternalLogLevel.INFO, "Unable to parse kernel version: " + kernelVersion);
+            MAJOR = 0;
+            MINOR = 0;
+            BUGFIX = 0;
         }
     }
 
     @Test
     public void testMultipleBindSocketChannelWithoutReusePortFails() {
-        Assume.assumeTrue(versionEqOrGt(3, 9, 0));
+        assumeTrue(versionEqOrGt(3, 9, 0));
         testMultipleBindDatagramChannelWithoutReusePortFails0(createServerBootstrap());
     }
 
     @Test
     public void testMultipleBindDatagramChannelWithoutReusePortFails() {
-        Assume.assumeTrue(versionEqOrGt(3, 9, 0));
+        assumeTrue(versionEqOrGt(3, 9, 0));
         testMultipleBindDatagramChannelWithoutReusePortFails0(createBootstrap());
     }
 
     private static void testMultipleBindDatagramChannelWithoutReusePortFails0(AbstractBootstrap<?, ?> bootstrap) {
-        bootstrap.handler(new DummyHandler());
+        bootstrap.handler(new LoggingHandler(LogLevel.ERROR));
         ChannelFuture future = bootstrap.bind().syncUninterruptibly();
         try {
-            bootstrap.bind().syncUninterruptibly();
-            Assert.fail();
+            bootstrap.bind(future.channel().localAddress()).syncUninterruptibly();
+            fail();
         } catch (Exception e) {
-            Assert.assertTrue(e instanceof IOException);
+            assertTrue(e instanceof IOException);
         }
         future.channel().close().syncUninterruptibly();
     }
 
-    @Test(timeout = 10000)
+    @Test
+    @Timeout(value = 10000, unit = TimeUnit.MILLISECONDS)
     public void testMultipleBindSocketChannel() throws Exception {
-        Assume.assumeTrue(versionEqOrGt(3, 9, 0));
+        assumeTrue(versionEqOrGt(3, 9, 0));
         ServerBootstrap bootstrap = createServerBootstrap();
         bootstrap.option(EpollChannelOption.SO_REUSEPORT, true);
         final AtomicBoolean accepted1 = new AtomicBoolean();
@@ -102,10 +126,10 @@ public class EpollReuseAddrTest {
 
         final AtomicBoolean accepted2 = new AtomicBoolean();
         bootstrap.childHandler(new ServerSocketTestHandler(accepted2));
-        ChannelFuture future2 = bootstrap.bind().syncUninterruptibly();
+        ChannelFuture future2 = bootstrap.bind(address1).syncUninterruptibly();
         InetSocketAddress address2 = (InetSocketAddress) future2.channel().localAddress();
 
-        Assert.assertEquals(address1, address2);
+        assertEquals(address1, address2);
         while (!accepted1.get() || !accepted2.get()) {
             Socket socket = new Socket(address1.getAddress(), address1.getPort());
             socket.setReuseAddress(true);
@@ -115,10 +139,12 @@ public class EpollReuseAddrTest {
         future2.channel().close().syncUninterruptibly();
     }
 
-    @Test(timeout = 10000)
+    @Test
+    @Timeout(value = 10000, unit = TimeUnit.MILLISECONDS)
+    @Disabled // TODO: Unignore after making it pass on centos6-1 and debian7-1
     public void testMultipleBindDatagramChannel() throws Exception {
         ResourceLeakDetector.setLevel(ResourceLeakDetector.Level.ADVANCED);
-        Assume.assumeTrue(versionEqOrGt(3, 9, 0));
+        assumeTrue(versionEqOrGt(3, 9, 0));
         Bootstrap bootstrap = createBootstrap();
         bootstrap.option(EpollChannelOption.SO_REUSEPORT, true);
         final AtomicBoolean received1 = new AtomicBoolean();
@@ -128,10 +154,10 @@ public class EpollReuseAddrTest {
 
         final AtomicBoolean received2 = new AtomicBoolean();
         bootstrap.handler(new DatagramSocketTestHandler(received2));
-        ChannelFuture future2 = bootstrap.bind().syncUninterruptibly();
+        ChannelFuture future2 = bootstrap.bind(address1).syncUninterruptibly();
         final InetSocketAddress address2 = (InetSocketAddress) future2.channel().localAddress();
 
-        Assert.assertEquals(address1, address2);
+        assertEquals(address1, address2);
         final byte[] bytes = "data".getBytes();
 
         // fire up 16 Threads and send DatagramPackets to make sure we stress it enough to see DatagramPackets received
@@ -163,8 +189,8 @@ public class EpollReuseAddrTest {
         executor.shutdown();
         future.channel().close().syncUninterruptibly();
         future2.channel().close().syncUninterruptibly();
-        Assert.assertTrue(received1.get());
-        Assert.assertTrue(received2.get());
+        assertTrue(received1.get());
+        assertTrue(received2.get());
     }
 
     private static ServerBootstrap createServerBootstrap() {
@@ -172,7 +198,7 @@ public class EpollReuseAddrTest {
         bootstrap.group(EpollSocketTestPermutation.EPOLL_BOSS_GROUP, EpollSocketTestPermutation.EPOLL_WORKER_GROUP);
         bootstrap.channel(EpollServerSocketChannel.class);
         bootstrap.childHandler(new DummyHandler());
-        InetSocketAddress address = new InetSocketAddress(NetUtil.LOCALHOST, TestUtils.getFreePort());
+        InetSocketAddress address = new InetSocketAddress(NetUtil.LOCALHOST, 0);
         bootstrap.localAddress(address);
         return bootstrap;
     }
@@ -181,7 +207,7 @@ public class EpollReuseAddrTest {
         Bootstrap bootstrap = new Bootstrap();
         bootstrap.group(EpollSocketTestPermutation.EPOLL_WORKER_GROUP);
         bootstrap.channel(EpollDatagramChannel.class);
-        InetSocketAddress address = new InetSocketAddress(NetUtil.LOCALHOST, TestUtils.getFreePort());
+        InetSocketAddress address = new InetSocketAddress(NetUtil.LOCALHOST, 0);
         bootstrap.localAddress(address);
         return bootstrap;
     }

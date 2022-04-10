@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,8 +15,11 @@
  */
 package io.netty.handler.codec;
 
+import static io.netty.util.internal.ObjectUtil.checkPositive;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.util.internal.ObjectUtil;
 
 import java.util.List;
 
@@ -164,12 +167,7 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
     public DelimiterBasedFrameDecoder(
             int maxFrameLength, boolean stripDelimiter, boolean failFast, ByteBuf... delimiters) {
         validateMaxFrameLength(maxFrameLength);
-        if (delimiters == null) {
-            throw new NullPointerException("delimiters");
-        }
-        if (delimiters.length == 0) {
-            throw new IllegalArgumentException("empty delimiters");
-        }
+        ObjectUtil.checkNonEmpty(delimiters, "delimiters");
 
         if (isLineBased(delimiters) && !isSubclass()) {
             lineBasedDecoder = new LineBasedFrameDecoder(maxFrameLength, stripDelimiter, failFast);
@@ -255,7 +253,7 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
                 int tooLongFrameLength = this.tooLongFrameLength;
                 this.tooLongFrameLength = 0;
                 if (!failFast) {
-                    fail(ctx, tooLongFrameLength);
+                    fail(tooLongFrameLength);
                 }
                 return null;
             }
@@ -263,18 +261,18 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
             if (minFrameLength > maxFrameLength) {
                 // Discard read frame.
                 buffer.skipBytes(minFrameLength + minDelimLength);
-                fail(ctx, minFrameLength);
+                fail(minFrameLength);
                 return null;
             }
 
             if (stripDelimiter) {
-                frame = buffer.readSlice(minFrameLength);
+                frame = buffer.readRetainedSlice(minFrameLength);
                 buffer.skipBytes(minDelimLength);
             } else {
-                frame = buffer.readSlice(minFrameLength + minDelimLength);
+                frame = buffer.readRetainedSlice(minFrameLength + minDelimLength);
             }
 
-            return frame.retain();
+            return frame;
         } else {
             if (!discardingTooLongFrame) {
                 if (buffer.readableBytes() > maxFrameLength) {
@@ -283,7 +281,7 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
                     buffer.skipBytes(buffer.readableBytes());
                     discardingTooLongFrame = true;
                     if (failFast) {
-                        fail(ctx, tooLongFrameLength);
+                        fail(tooLongFrameLength);
                     }
                 }
             } else {
@@ -295,17 +293,15 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
         }
     }
 
-    private void fail(ChannelHandlerContext ctx, long frameLength) {
+    private void fail(long frameLength) {
         if (frameLength > 0) {
-            ctx.fireExceptionCaught(
-                    new TooLongFrameException(
+            throw new TooLongFrameException(
                             "frame length exceeds " + maxFrameLength +
-                            ": " + frameLength + " - discarded"));
+                            ": " + frameLength + " - discarded");
         } else {
-            ctx.fireExceptionCaught(
-                    new TooLongFrameException(
+            throw new TooLongFrameException(
                             "frame length exceeds " + maxFrameLength +
-                            " - discarding"));
+                            " - discarding");
         }
     }
 
@@ -339,19 +335,13 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
     }
 
     private static void validateDelimiter(ByteBuf delimiter) {
-        if (delimiter == null) {
-            throw new NullPointerException("delimiter");
-        }
+        ObjectUtil.checkNotNull(delimiter, "delimiter");
         if (!delimiter.isReadable()) {
             throw new IllegalArgumentException("empty delimiter");
         }
     }
 
     private static void validateMaxFrameLength(int maxFrameLength) {
-        if (maxFrameLength <= 0) {
-            throw new IllegalArgumentException(
-                    "maxFrameLength must be a positive integer: " +
-                    maxFrameLength);
-        }
+        checkPositive(maxFrameLength, "maxFrameLength");
     }
 }

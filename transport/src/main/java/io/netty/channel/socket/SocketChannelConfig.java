@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,11 +17,10 @@ package io.netty.channel.socket;
 
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.ChannelConfig;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandler;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.MessageSizeEstimator;
 import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.WriteBufferWaterMark;
 
 import java.net.Socket;
 import java.net.StandardSocketOptions;
@@ -31,7 +30,7 @@ import java.net.StandardSocketOptions;
  *
  * <h3>Available options</h3>
  *
- * In addition to the options provided by {@link ChannelConfig},
+ * In addition to the options provided by {@link DuplexChannelConfig},
  * {@link SocketChannelConfig} allows the following options in the option map:
  *
  * <table border="1" cellspacing="0" cellpadding="6">
@@ -56,7 +55,7 @@ import java.net.StandardSocketOptions;
  * </tr>
  * </table>
  */
-public interface SocketChannelConfig extends ChannelConfig {
+public interface SocketChannelConfig extends DuplexChannelConfig {
 
     /**
      * Gets the {@link StandardSocketOptions#TCP_NODELAY} option.  Please note that the default value of this option
@@ -140,27 +139,14 @@ public interface SocketChannelConfig extends ChannelConfig {
      */
     SocketChannelConfig setPerformancePreferences(int connectionTime, int latency, int bandwidth);
 
-    /**
-     * Returns {@code true} if and only if the channel should not close itself when its remote
-     * peer shuts down output to make the connection half-closed.  If {@code false}, the connection
-     * is closed automatically when the remote peer shuts down output.
-     */
-    boolean isAllowHalfClosure();
-
-    /**
-     * Sets whether the channel should not close itself when its remote peer shuts down output to
-     * make the connection half-closed.  If {@code true} the connection is not closed when the
-     * remote peer shuts down output. Instead,
-     * {@link ChannelInboundHandler#userEventTriggered(ChannelHandlerContext, Object)}
-     * is invoked with a {@link ChannelInputShutdownEvent} object. If {@code false}, the connection
-     * is closed automatically.
-     */
+    @Override
     SocketChannelConfig setAllowHalfClosure(boolean allowHalfClosure);
 
     @Override
     SocketChannelConfig setConnectTimeoutMillis(int connectTimeoutMillis);
 
     @Override
+    @Deprecated
     SocketChannelConfig setMaxMessagesPerRead(int maxMessagesPerRead);
 
     @Override
@@ -180,4 +166,7 @@ public interface SocketChannelConfig extends ChannelConfig {
 
     @Override
     SocketChannelConfig setMessageSizeEstimator(MessageSizeEstimator estimator);
+
+    @Override
+    SocketChannelConfig setWriteBufferWaterMark(WriteBufferWaterMark writeBufferWaterMark);
 }

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -34,11 +34,13 @@ public enum LogLevel {
     }
 
     /**
-     * Converts the specified {@link LogLevel} to its {@link InternalLogLevel} variant.
+     * For internal use only.
+     *
+     * <p/>Converts the specified {@link LogLevel} to its {@link InternalLogLevel} variant.
      *
      * @return the converted level.
      */
-    InternalLogLevel toInternalLevel() {
+    public InternalLogLevel toInternalLevel() {
         return internalLevel;
     }
 }

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,11 +16,11 @@
 package io.netty.handler.codec;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
 import io.netty.util.Signal;
-import io.netty.util.internal.RecyclableArrayList;
 import io.netty.util.internal.StringUtil;
 
 import java.util.List;
@@ -64,7 +64,7 @@ import java.util.List;
  *      extends {@link ReplayingDecoder}&lt;{@link Void}&gt; {
  *
  *   protected void decode({@link ChannelHandlerContext} ctx,
- *                           {@link ByteBuf} buf) throws Exception {
+ *                           {@link ByteBuf} buf, List&lt;Object&gt; out) throws Exception {
  *
  *     out.add(buf.readBytes(buf.readInt()));
  *   }
@@ -240,7 +240,7 @@ import java.util.List;
  * public class FirstDecoder extends {@link ReplayingDecoder}&lt;{@link Void}&gt; {
  *
  *     {@code @Override}
- *     protected Object decode({@link ChannelHandlerContext} ctx,
+ *     protected void decode({@link ChannelHandlerContext} ctx,
  *                             {@link ByteBuf} buf, List&lt;Object&gt; out) {
  *         ...
  *         // Decode the first message
@@ -269,7 +269,7 @@ public abstract class ReplayingDecoder<S> extends ByteToMessageDecoder {
 
     static final Signal REPLAY = Signal.valueOf(ReplayingDecoder.class, "REPLAY");
 
-    private final ReplayingDecoderBuffer replayable = new ReplayingDecoderBuffer();
+    private final ReplayingDecoderByteBuf replayable = new ReplayingDecoderByteBuf();
     private S state;
     private int checkpoint = -1;
 
@@ -322,31 +322,18 @@ public abstract class ReplayingDecoder<S> extends ByteToMessageDecoder {
     }
 
     @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        RecyclableArrayList out = RecyclableArrayList.newInstance();
+    final void channelInputClosed(ChannelHandlerContext ctx, List<Object> out) throws Exception {
         try {
             replayable.terminate();
-            callDecode(ctx, internalBuffer(), out);
+            if (cumulation != null) {
+                callDecode(ctx, internalBuffer(), out);
+            } else {
+                replayable.setCumulation(Unpooled.EMPTY_BUFFER);
+            }
             decodeLast(ctx, replayable, out);
         } catch (Signal replay) {
             // Ignore
             replay.expect(REPLAY);
-        } catch (DecoderException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new DecoderException(e);
-        } finally {
-            if (cumulation != null) {
-                cumulation.release();
-                cumulation = null;
-            }
-
-            int size = out.size();
-            for (int i = 0; i < size; i ++) {
-                ctx.fireChannelRead(out.get(i));
-            }
-            ctx.fireChannelInactive();
-            out.recycle();
         }
     }
 
@@ -357,10 +344,26 @@ public abstract class ReplayingDecoder<S> extends ByteToMessageDecoder {
             while (in.isReadable()) {
                 int oldReaderIndex = checkpoint = in.readerIndex();
                 int outSize = out.size();
+
+                if (outSize > 0) {
+                    fireChannelRead(ctx, out, outSize);
+                    out.clear();
+
+                    // Check if this handler was removed before continuing with decoding.
+                    // If it was removed, it is not safe to continue to operate on the buffer.
+                    //
+                    // See:
+                    // - https://github.com/netty/netty/issues/4635
+                    if (ctx.isRemoved()) {
+                        break;
+                    }
+                    outSize = 0;
+                }
+
                 S oldState = state;
                 int oldInputLength = in.readableBytes();
                 try {
-                    decode(ctx, replayable, out);
+                    decodeRemovalReentryProtection(ctx, replayable, out);
 
                     // Check if this handler was removed before continuing the loop.
                     // If it was removed, it is not safe to continue to operate on the buffer.
@@ -414,7 +417,7 @@ public abstract class ReplayingDecoder<S> extends ByteToMessageDecoder {
             }
         } catch (DecoderException e) {
             throw e;
-        } catch (Throwable cause) {
+        } catch (Exception cause) {
             throw new DecoderException(cause);
         }
     }

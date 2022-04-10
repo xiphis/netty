@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,7 +20,7 @@ import com.sun.nio.sctp.MessageInfo;
 import com.sun.nio.sctp.NotificationHandler;
 import com.sun.nio.sctp.SctpChannel;
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.AbstractChannel;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelFuture;
@@ -34,8 +34,8 @@ import io.netty.channel.sctp.SctpChannelConfig;
 import io.netty.channel.sctp.SctpMessage;
 import io.netty.channel.sctp.SctpNotificationHandler;
 import io.netty.channel.sctp.SctpServerChannel;
-import io.netty.util.Recycler;
 import io.netty.util.internal.PlatformDependent;
+import io.netty.util.internal.StringUtil;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
@@ -67,8 +67,6 @@ public class NioSctpChannel extends AbstractNioMessageChannel implements io.nett
     private final SctpChannelConfig config;
 
     private final NotificationHandler<?> notificationHandler;
-
-    private RecvByteBufAllocator.Handle allocHandle;
 
     private static SctpChannel newSctpChannel() {
         try {
@@ -265,10 +263,7 @@ public class NioSctpChannel extends AbstractNioMessageChannel implements io.nett
     protected int doReadMessages(List<Object> buf) throws Exception {
         SctpChannel ch = javaChannel();
 
-        RecvByteBufAllocator.Handle allocHandle = this.allocHandle;
-        if (allocHandle == null) {
-            this.allocHandle = allocHandle = config().getRecvByteBufAllocator().newHandle();
-        }
+        RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle();
         ByteBuf buffer = allocHandle.allocate(config().getAllocator());
         boolean free = true;
         try {
@@ -279,15 +274,16 @@ public class NioSctpChannel extends AbstractNioMessageChannel implements io.nett
             if (messageInfo == null) {
                 return 0;
             }
-            buf.add(new SctpMessage(messageInfo, buffer.writerIndex(buffer.writerIndex() + data.position() - pos)));
+
+            allocHandle.lastBytesRead(data.position() - pos);
+            buf.add(new SctpMessage(messageInfo,
+                    buffer.writerIndex(buffer.writerIndex() + allocHandle.lastBytesRead())));
             free = false;
             return 1;
         } catch (Throwable cause) {
             PlatformDependent.throwException(cause);
             return -1;
         }  finally {
-            int bytesRead = buffer.readableBytes();
-            allocHandle.record(bytesRead);
             if (free) {
                 buffer.release();
             }
@@ -303,15 +299,43 @@ public class NioSctpChannel extends AbstractNioMessageChannel implements io.nett
             return true;
         }
 
-        ByteBuffer nioData = data.nioBuffer();
-
+        ByteBufAllocator alloc = alloc();
+        boolean needsCopy = data.nioBufferCount() != 1;
+        if (!needsCopy) {
+            if (!data.isDirect() && alloc.isDirectBufferPooled()) {
+                needsCopy = true;
+            }
+        }
+        ByteBuffer nioData;
+        if (needsCopy) {
+            data = alloc.directBuffer(dataLen).writeBytes(data);
+        }
+        nioData = data.nioBuffer();
         final MessageInfo mi = MessageInfo.createOutgoing(association(), null, packet.streamIdentifier());
         mi.payloadProtocolID(packet.protocolIdentifier());
         mi.streamNumber(packet.streamIdentifier());
+        mi.unordered(packet.isUnordered());
 
         final int writtenBytes = javaChannel().send(nioData, mi);
-
         return writtenBytes > 0;
+    }
+
+    @Override
+    protected final Object filterOutboundMessage(Object msg) throws Exception {
+        if (msg instanceof SctpMessage) {
+            SctpMessage m = (SctpMessage) msg;
+            ByteBuf buf = m.content();
+            if (buf.isDirect() && buf.nioBufferCount() == 1) {
+                return m;
+            }
+
+            return new SctpMessage(m.protocolIdentifier(), m.streamIdentifier(), m.isUnordered(),
+                                   newDirectBuffer(m, buf));
+        }
+
+        throw new UnsupportedOperationException(
+                "unsupported message type: " + StringUtil.simpleClassName(msg) +
+                " (expected: " + StringUtil.simpleClassName(SctpMessage.class));
     }
 
     @Override
@@ -364,44 +388,6 @@ public class NioSctpChannel extends AbstractNioMessageChannel implements io.nett
         return promise;
     }
 
-    @Override
-    protected ChannelOutboundBuffer newOutboundBuffer() {
-        return NioSctpChannelOutboundBuffer.newInstance(this);
-    }
-
-    static final class NioSctpChannelOutboundBuffer extends ChannelOutboundBuffer {
-        private static final Recycler<NioSctpChannelOutboundBuffer> RECYCLER =
-                new Recycler<NioSctpChannelOutboundBuffer>() {
-                    @Override
-                    protected NioSctpChannelOutboundBuffer newObject(Handle<NioSctpChannelOutboundBuffer> handle) {
-                        return new NioSctpChannelOutboundBuffer(handle);
-                    }
-                };
-
-        static NioSctpChannelOutboundBuffer newInstance(AbstractChannel channel) {
-            NioSctpChannelOutboundBuffer buffer = RECYCLER.get();
-            buffer.channel = channel;
-            return buffer;
-        }
-
-        private NioSctpChannelOutboundBuffer(Recycler.Handle<NioSctpChannelOutboundBuffer> handle) {
-            super(handle);
-        }
-
-        @Override
-        protected Object beforeAdd(Object msg) {
-            if (msg instanceof SctpMessage) {
-                SctpMessage message = (SctpMessage) msg;
-                ByteBuf content = message.content();
-                if (!content.isDirect() || content.nioBufferCount() != 1) {
-                    ByteBuf direct = copyToDirectByteBuf(content);
-                    return new SctpMessage(message.protocolIdentifier(), message.streamIdentifier(), direct);
-                }
-            }
-            return msg;
-        }
-    }
-
     private final class NioSctpChannelConfig extends DefaultSctpChannelConfig {
         private NioSctpChannelConfig(NioSctpChannel channel, SctpChannel javaChannel) {
             super(channel, javaChannel);
@@ -409,7 +395,7 @@ public class NioSctpChannel extends AbstractNioMessageChannel implements io.nett
 
         @Override
         protected void autoReadCleared() {
-            setReadPending(false);
+            clearReadPending();
         }
     }
 }

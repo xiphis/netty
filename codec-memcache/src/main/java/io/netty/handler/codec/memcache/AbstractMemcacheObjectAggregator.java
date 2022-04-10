@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,6 +20,7 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.MessageAggregator;
 import io.netty.handler.codec.memcache.binary.BinaryMemcacheRequestDecoder;
 import io.netty.handler.codec.memcache.binary.BinaryMemcacheResponseEncoder;
+import io.netty.util.internal.UnstableApi;
 
 /**
  * A {@link ChannelHandler} that aggregates an {@link MemcacheMessage}
@@ -41,6 +42,7 @@ import io.netty.handler.codec.memcache.binary.BinaryMemcacheResponseEncoder;
  * p.addLast("handler", new YourMemcacheRequestHandler());
  * </pre>
  */
+@UnstableApi
 public abstract class AbstractMemcacheObjectAggregator<H extends MemcacheMessage> extends
         MessageAggregator<MemcacheObject, H, MemcacheContent, FullMemcacheMessage> {
 
@@ -64,17 +66,22 @@ public abstract class AbstractMemcacheObjectAggregator<H extends MemcacheMessage
     }
 
     @Override
-    protected boolean hasContentLength(H start) throws Exception {
+    protected boolean isContentLengthInvalid(H start, int maxContentLength) {
         return false;
     }
 
     @Override
-    protected long contentLength(H start) throws Exception {
+    protected Object newContinueResponse(H start, int maxContentLength, ChannelPipeline pipeline) {
+        return null;
+    }
+
+    @Override
+    protected boolean closeAfterContinueResponse(Object msg) throws Exception {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    protected Object newContinueResponse(H start) throws Exception {
-        return null;
+    protected boolean ignoreContentAfterContinueResponse(Object msg) throws Exception {
+        throw new UnsupportedOperationException();
     }
 }

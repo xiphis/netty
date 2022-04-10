@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -73,13 +73,12 @@ import java.lang.annotation.Target;
  *
  *     {@code @Override}
  *     public void channelRead0({@link ChannelHandlerContext} ctx, Message message) {
- *         {@link Channel} ch = e.getChannel();
  *         if (message instanceof LoginMessage) {
  *             authenticate((LoginMessage) message);
  *             <b>loggedIn = true;</b>
  *         } else (message instanceof GetDataMessage) {
  *             if (<b>loggedIn</b>) {
- *                 ch.write(fetchSecret((GetDataMessage) message));
+ *                 ctx.writeAndFlush(fetchSecret((GetDataMessage) message));
  *             } else {
  *                 fail();
  *             }
@@ -95,7 +94,7 @@ import java.lang.annotation.Target;
  * <pre>
  * // Create a new handler instance per channel.
  * // See {@link ChannelInitializer#initChannel(Channel)}.
- * public class DataServerInitializer extends {@link ChannelInitializer}&lt{@link Channel}&gt {
+ * public class DataServerInitializer extends {@link ChannelInitializer}&lt;{@link Channel}&gt; {
  *     {@code @Override}
  *     public void initChannel({@link Channel} channel) {
  *         channel.pipeline().addLast("handler", <b>new DataServerHandler()</b>);
@@ -117,19 +116,18 @@ import java.lang.annotation.Target;
  *
  * {@code @Sharable}
  * public class DataServerHandler extends {@link SimpleChannelInboundHandler}&lt;Message&gt; {
- *     private final {@link AttributeKey}&lt{@link Boolean}&gt auth =
+ *     private final {@link AttributeKey}&lt;{@link Boolean}&gt; auth =
  *           {@link AttributeKey#valueOf(String) AttributeKey.valueOf("auth")};
  *
  *     {@code @Override}
  *     public void channelRead({@link ChannelHandlerContext} ctx, Message message) {
- *         {@link Attribute}&lt{@link Boolean}&gt attr = ctx.attr(auth);
- *         {@link Channel} ch = ctx.channel();
+ *         {@link Attribute}&lt;{@link Boolean}&gt; attr = ctx.attr(auth);
  *         if (message instanceof LoginMessage) {
  *             authenticate((LoginMessage) o);
  *             <b>attr.set(true)</b>;
  *         } else (message instanceof GetDataMessage) {
  *             if (<b>Boolean.TRUE.equals(attr.get())</b>) {
- *                 ch.write(fetchSecret((GetDataMessage) o));
+ *                 ctx.writeAndFlush(fetchSecret((GetDataMessage) o));
  *             } else {
  *                 fail();
  *             }
@@ -141,7 +139,7 @@ import java.lang.annotation.Target;
  * Now that the state of the handler is attached to the {@link ChannelHandlerContext}, you can add the
  * same handler instance to different pipelines:
  * <pre>
- * public class DataServerInitializer extends {@link ChannelInitializer}&lt{@link Channel}&gt {
+ * public class DataServerInitializer extends {@link ChannelInitializer}&lt;{@link Channel}&gt; {
  *
  *     private static final DataServerHandler <b>SHARED</b> = new DataServerHandler();
  *
@@ -192,7 +190,11 @@ public interface ChannelHandler {
 
     /**
      * Gets called if a {@link Throwable} was thrown.
+     *
+     * @deprecated if you want to handle this event you should implement {@link ChannelInboundHandler} and
+     * implement the method there.
      */
+    @Deprecated
     void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception;
 
     /**

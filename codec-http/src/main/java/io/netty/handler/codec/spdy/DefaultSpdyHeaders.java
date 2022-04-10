@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,101 +15,70 @@
  */
 package io.netty.handler.codec.spdy;
 
-import io.netty.handler.codec.AsciiString;
-import io.netty.handler.codec.DefaultTextHeaders;
-import io.netty.handler.codec.TextHeaderProcessor;
-import io.netty.handler.codec.TextHeaders;
+import io.netty.handler.codec.CharSequenceValueConverter;
+import io.netty.handler.codec.DefaultHeaders;
+import io.netty.handler.codec.HeadersUtils;
 
-import java.util.Locale;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map.Entry;
 
+import static io.netty.util.AsciiString.CASE_INSENSITIVE_HASHER;
+import static io.netty.util.AsciiString.CASE_SENSITIVE_HASHER;
 
-public class DefaultSpdyHeaders extends DefaultTextHeaders implements SpdyHeaders {
-    @Override
-    protected CharSequence convertName(CharSequence name) {
-        name = super.convertName(name);
-        if (name instanceof AsciiString) {
-            name = ((AsciiString) name).toLowerCase();
-        } else {
-            name = name.toString().toLowerCase(Locale.US);
+public class DefaultSpdyHeaders extends DefaultHeaders<CharSequence, CharSequence, SpdyHeaders> implements SpdyHeaders {
+    private static final NameValidator<CharSequence> SpdyNameValidator = new NameValidator<CharSequence>() {
+        @Override
+        public void validateName(CharSequence name) {
+            SpdyCodecUtil.validateHeaderName(name);
         }
-        SpdyCodecUtil.validateHeaderName(name);
-        return name;
+    };
+
+    public DefaultSpdyHeaders() {
+        this(true);
+    }
+
+    @SuppressWarnings("unchecked")
+    public DefaultSpdyHeaders(boolean validate) {
+        super(CASE_INSENSITIVE_HASHER,
+                validate ? HeaderValueConverterAndValidator.INSTANCE : CharSequenceValueConverter.INSTANCE,
+                validate ? SpdyNameValidator : NameValidator.NOT_NULL);
     }
 
     @Override
-    protected CharSequence convertValue(Object value) {
-        if (value == null) {
-            throw new NullPointerException("value");
+    public String getAsString(CharSequence name) {
+        return HeadersUtils.getAsString(this, name);
+    }
+
+    @Override
+    public List<String> getAllAsString(CharSequence name) {
+        return HeadersUtils.getAllAsString(this, name);
+    }
+
+    @Override
+    public Iterator<Entry<String, String>> iteratorAsString() {
+        return HeadersUtils.iteratorAsString(this);
+    }
+
+    @Override
+    public boolean contains(CharSequence name, CharSequence value) {
+        return contains(name, value, false);
+    }
+
+    @Override
+    public boolean contains(CharSequence name, CharSequence value, boolean ignoreCase) {
+        return contains(name, value,
+                ignoreCase ? CASE_INSENSITIVE_HASHER : CASE_SENSITIVE_HASHER);
+    }
+
+    private static final class HeaderValueConverterAndValidator extends CharSequenceValueConverter {
+        public static final HeaderValueConverterAndValidator INSTANCE = new HeaderValueConverterAndValidator();
+
+        @Override
+        public CharSequence convertObject(Object value) {
+            final CharSequence seq = super.convertObject(value);
+            SpdyCodecUtil.validateHeaderValue(seq);
+            return seq;
         }
-
-        CharSequence seq;
-        if (value instanceof CharSequence) {
-            seq = (CharSequence) value;
-        } else {
-            seq = value.toString();
-        }
-
-        SpdyCodecUtil.validateHeaderValue(seq);
-        return seq;
-    }
-
-    @Override
-    public SpdyHeaders add(CharSequence name, Object value) {
-        super.add(name, value);
-        return this;
-    }
-
-    @Override
-    public SpdyHeaders add(CharSequence name, Iterable<?> values) {
-        super.add(name, values);
-        return this;
-    }
-
-    @Override
-    public SpdyHeaders add(CharSequence name, Object... values) {
-        super.add(name, values);
-        return this;
-    }
-
-    @Override
-    public SpdyHeaders add(TextHeaders headers) {
-        super.add(headers);
-        return this;
-    }
-
-    @Override
-    public SpdyHeaders set(CharSequence name, Object value) {
-        super.set(name, value);
-        return this;
-    }
-
-    @Override
-    public SpdyHeaders set(CharSequence name, Object... values) {
-        super.set(name, values);
-        return this;
-    }
-
-    @Override
-    public SpdyHeaders set(CharSequence name, Iterable<?> values) {
-        super.set(name, values);
-        return this;
-    }
-
-    @Override
-    public SpdyHeaders set(TextHeaders headers) {
-        super.set(headers);
-        return this;
-    }
-
-    @Override
-    public SpdyHeaders clear() {
-        super.clear();
-        return this;
-    }
-
-    @Override
-    public SpdyHeaders forEachEntry(TextHeaderProcessor processor) {
-        super.forEachEntry(processor);
-        return this;
     }
 }

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,10 +18,12 @@ package io.netty.handler.codec.spdy;
 import com.jcraft.jzlib.Deflater;
 import com.jcraft.jzlib.JZlib;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.compression.CompressionException;
 
 import static io.netty.handler.codec.spdy.SpdyCodecUtil.*;
+import static io.netty.util.internal.ObjectUtil.checkNotNullWithIAE;
 
 class SpdyHeaderBlockJZlibEncoder extends SpdyHeaderBlockRawEncoder {
 
@@ -60,28 +62,52 @@ class SpdyHeaderBlockJZlibEncoder extends SpdyHeaderBlockRawEncoder {
     }
 
     private void setInput(ByteBuf decompressed) {
-        byte[] in = new byte[decompressed.readableBytes()];
-        decompressed.readBytes(in);
+        int len = decompressed.readableBytes();
+
+        byte[] in;
+        int offset;
+        if (decompressed.hasArray()) {
+            in = decompressed.array();
+            offset = decompressed.arrayOffset() + decompressed.readerIndex();
+        } else {
+            in = new byte[len];
+            decompressed.getBytes(decompressed.readerIndex(), in);
+            offset = 0;
+        }
         z.next_in = in;
-        z.next_in_index = 0;
-        z.avail_in = in.length;
+        z.next_in_index = offset;
+        z.avail_in = len;
     }
 
-    private void encode(ByteBuf compressed) {
+    private ByteBuf encode(ByteBufAllocator alloc) {
+        boolean release = true;
+        ByteBuf out = null;
         try {
-            byte[] out = new byte[(int) Math.ceil(z.next_in.length * 1.001) + 12];
-            z.next_out = out;
-            z.next_out_index = 0;
-            z.avail_out = out.length;
+            int oldNextInIndex = z.next_in_index;
+            int oldNextOutIndex = z.next_out_index;
 
-            int resultCode = z.deflate(JZlib.Z_SYNC_FLUSH);
+            int maxOutputLength = (int) Math.ceil(z.next_in.length * 1.001) + 12;
+            out = alloc.heapBuffer(maxOutputLength);
+            z.next_out = out.array();
+            z.next_out_index = out.arrayOffset() + out.writerIndex();
+            z.avail_out = maxOutputLength;
+
+            int resultCode;
+            try {
+                resultCode = z.deflate(JZlib.Z_SYNC_FLUSH);
+            } finally {
+                out.skipBytes(z.next_in_index - oldNextInIndex);
+            }
             if (resultCode != JZlib.Z_OK) {
                 throw new CompressionException("compression failure: " + resultCode);
             }
 
-            if (z.next_out_index != 0) {
-                compressed.writeBytes(out, 0, z.next_out_index);
+            int outputLength = z.next_out_index - oldNextOutIndex;
+            if (outputLength > 0) {
+                out.writerIndex(out.writerIndex() + outputLength);
             }
+            release = false;
+            return out;
         } finally {
             // Deference the external references explicitly to tell the VM that
             // the allocated byte arrays are temporary so that the call stack
@@ -89,28 +115,32 @@ class SpdyHeaderBlockJZlibEncoder extends SpdyHeaderBlockRawEncoder {
             // I'm not sure if the modern VMs do this optimization though.
             z.next_in = null;
             z.next_out = null;
+            if (release && out != null) {
+                out.release();
+            }
         }
     }
 
     @Override
-    public ByteBuf encode(SpdyHeadersFrame frame) throws Exception {
-        if (frame == null) {
-            throw new IllegalArgumentException("frame");
-        }
+    public ByteBuf encode(ByteBufAllocator alloc, SpdyHeadersFrame frame) throws Exception {
+        checkNotNullWithIAE(alloc, "alloc");
+        checkNotNullWithIAE(frame, "frame");
 
         if (finished) {
             return Unpooled.EMPTY_BUFFER;
         }
 
-        ByteBuf decompressed = super.encode(frame);
-        if (decompressed.readableBytes() == 0) {
-            return Unpooled.EMPTY_BUFFER;
-        }
+        ByteBuf decompressed = super.encode(alloc, frame);
+        try {
+            if (!decompressed.isReadable()) {
+                return Unpooled.EMPTY_BUFFER;
+            }
 
-        ByteBuf compressed = decompressed.alloc().buffer();
-        setInput(decompressed);
-        encode(compressed);
-        return compressed;
+            setInput(decompressed);
+            return encode(alloc);
+        } finally {
+            decompressed.release();
+        }
     }
 
     @Override

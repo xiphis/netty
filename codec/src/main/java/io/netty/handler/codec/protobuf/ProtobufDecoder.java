@@ -1,11 +1,11 @@
 /*
- * Copyright 2012 The Netty Project
+ * Copyright 2015 The Netty Project
  *
  * The Netty Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,9 +16,11 @@
 package io.netty.handler.codec.protobuf;
 
 import com.google.protobuf.ExtensionRegistry;
+import com.google.protobuf.ExtensionRegistryLite;
 import com.google.protobuf.Message;
 import com.google.protobuf.MessageLite;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
@@ -26,16 +28,17 @@ import io.netty.handler.codec.ByteToMessageDecoder;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.codec.MessageToMessageDecoder;
+import io.netty.util.internal.ObjectUtil;
 
 import java.util.List;
 
 /**
  * Decodes a received {@link ByteBuf} into a
- * <a href="http://code.google.com/p/protobuf/">Google Protocol Buffers</a>
- * {@link Message} and {@link MessageLite}.  Please note that this decoder must
+ * <a href="https://github.com/google/protobuf">Google Protocol Buffers</a>
+ * {@link Message} and {@link MessageLite}. Please note that this decoder must
  * be used with a proper {@link ByteToMessageDecoder} such as {@link ProtobufVarint32FrameDecoder}
  * or {@link LengthFieldBasedFrameDecoder} if you are using a stream-based
- * transport such as TCP/IP.  A typical setup for TCP/IP would be:
+ * transport such as TCP/IP. A typical setup for TCP/IP would be:
  * <pre>
  * {@link ChannelPipeline} pipeline = ...;
  *
@@ -52,7 +55,8 @@ import java.util.List;
  * and then you can use a {@code MyMessage} instead of a {@link ByteBuf}
  * as a message:
  * <pre>
- * void channelRead({@link ChannelHandlerContext} ctx, MyMessage req) {
+ * void channelRead({@link ChannelHandlerContext} ctx, Object msg) {
+ *     MyMessage req = (MyMessage) msg;
  *     MyMessage res = MyMessage.newBuilder().setText(
  *                               "Did you say '" + req.getText() + "'?").build();
  *     ch.write(res);
@@ -67,7 +71,7 @@ public class ProtobufDecoder extends MessageToMessageDecoder<ByteBuf> {
     static {
         boolean hasParser = false;
         try {
-            // MessageLite.getParsetForType() is not available until protobuf 2.5.0.
+            // MessageLite.getParserForType() is not available until protobuf 2.5.0.
             MessageLite.class.getDeclaredMethod("getParserForType");
             hasParser = true;
         } catch (Throwable t) {
@@ -78,7 +82,7 @@ public class ProtobufDecoder extends MessageToMessageDecoder<ByteBuf> {
     }
 
     private final MessageLite prototype;
-    private final ExtensionRegistry extensionRegistry;
+    private final ExtensionRegistryLite extensionRegistry;
 
     /**
      * Creates a new instance.
@@ -88,15 +92,17 @@ public class ProtobufDecoder extends MessageToMessageDecoder<ByteBuf> {
     }
 
     public ProtobufDecoder(MessageLite prototype, ExtensionRegistry extensionRegistry) {
-        if (prototype == null) {
-            throw new NullPointerException("prototype");
-        }
-        this.prototype = prototype.getDefaultInstanceForType();
+        this(prototype, (ExtensionRegistryLite) extensionRegistry);
+    }
+
+    public ProtobufDecoder(MessageLite prototype, ExtensionRegistryLite extensionRegistry) {
+        this.prototype = ObjectUtil.checkNotNull(prototype, "prototype").getDefaultInstanceForType();
         this.extensionRegistry = extensionRegistry;
     }
 
     @Override
-    protected void decode(ChannelHandlerContext ctx, ByteBuf msg, List<Object> out) throws Exception {
+    protected void decode(ChannelHandlerContext ctx, ByteBuf msg, List<Object> out)
+            throws Exception {
         final byte[] array;
         final int offset;
         final int length = msg.readableBytes();
@@ -104,8 +110,7 @@ public class ProtobufDecoder extends MessageToMessageDecoder<ByteBuf> {
             array = msg.array();
             offset = msg.arrayOffset() + msg.readerIndex();
         } else {
-            array = new byte[length];
-            msg.getBytes(msg.readerIndex(), array, 0, length);
+            array = ByteBufUtil.getBytes(msg, msg.readerIndex(), length, false);
             offset = 0;
         }
 
@@ -117,9 +122,11 @@ public class ProtobufDecoder extends MessageToMessageDecoder<ByteBuf> {
             }
         } else {
             if (HAS_PARSER) {
-                out.add(prototype.getParserForType().parseFrom(array, offset, length, extensionRegistry));
+                out.add(prototype.getParserForType().parseFrom(
+                        array, offset, length, extensionRegistry));
             } else {
-                out.add(prototype.newBuilderForType().mergeFrom(array, offset, length, extensionRegistry).build());
+                out.add(prototype.newBuilderForType().mergeFrom(
+                        array, offset, length, extensionRegistry).build());
             }
         }
     }

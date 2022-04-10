@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,9 +17,19 @@ package io.netty.handler.codec.socks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import org.junit.Test;
+import io.netty.util.CharsetUtil;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
-import static org.junit.Assert.*;
+import java.net.IDN;
+import java.nio.CharBuffer;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SocksCmdResponseTest {
     @Test
@@ -108,19 +118,70 @@ public class SocksCmdResponseTest {
         assertByteBufEquals(expected, buffer);
     }
 
+    @Test
+    public void testHostNotEncodedForUnknown() {
+        String asciiHost = "xn--e1aybc.xn--p1ai";
+        short port = 10000;
+
+        SocksCmdResponse rs = new SocksCmdResponse(SocksCmdStatus.SUCCESS, SocksAddressType.UNKNOWN, asciiHost, port);
+        assertEquals(asciiHost, rs.host());
+
+        ByteBuf buffer = Unpooled.buffer(16);
+        rs.encodeAsByteBuf(buffer);
+
+        buffer.resetReaderIndex();
+        assertEquals(SocksProtocolVersion.SOCKS5.byteValue(), buffer.readByte());
+        assertEquals(SocksCmdStatus.SUCCESS.byteValue(), buffer.readByte());
+        assertEquals((byte) 0x00, buffer.readByte());
+        assertEquals(SocksAddressType.UNKNOWN.byteValue(), buffer.readByte());
+        assertFalse(buffer.isReadable());
+
+        buffer.release();
+    }
+
+    @Test
+    public void testIDNEncodeToAsciiForDomain() {
+        String host = "тест.рф";
+        CharBuffer asciiHost = CharBuffer.wrap(IDN.toASCII(host));
+        short port = 10000;
+
+        SocksCmdResponse rs = new SocksCmdResponse(SocksCmdStatus.SUCCESS, SocksAddressType.DOMAIN, host, port);
+        assertEquals(host, rs.host());
+
+        ByteBuf buffer = Unpooled.buffer(24);
+        rs.encodeAsByteBuf(buffer);
+
+        buffer.resetReaderIndex();
+        assertEquals(SocksProtocolVersion.SOCKS5.byteValue(), buffer.readByte());
+        assertEquals(SocksCmdStatus.SUCCESS.byteValue(), buffer.readByte());
+        assertEquals((byte) 0x00, buffer.readByte());
+        assertEquals(SocksAddressType.DOMAIN.byteValue(), buffer.readByte());
+        assertEquals((byte) asciiHost.length(), buffer.readUnsignedByte());
+        assertEquals(asciiHost,
+            CharBuffer.wrap(buffer.readCharSequence(asciiHost.length(), CharsetUtil.US_ASCII)));
+        assertEquals(port, buffer.readUnsignedShort());
+
+        buffer.release();
+    }
+
     /**
      * Verifies that Response cannot be constructed with invalid IP.
      */
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void testInvalidBoundAddress() {
-        new SocksCmdResponse(SocksCmdStatus.SUCCESS, SocksAddressType.IPv4, "127.0.0", 1000);
+        assertThrows(IllegalArgumentException.class, new Executable() {
+            @Override
+            public void execute() {
+                new SocksCmdResponse(SocksCmdStatus.SUCCESS, SocksAddressType.IPv4, "127.0.0", 1000);
+            }
+        });
     }
 
     private static void assertByteBufEquals(byte[] expected, ByteBuf actual) {
         byte[] actualBytes = new byte[actual.readableBytes()];
         actual.readBytes(actualBytes);
-        assertEquals("Generated response has incorrect length", expected.length, actualBytes.length);
-        assertArrayEquals("Generated response differs from expected", expected, actualBytes);
+        assertEquals(expected.length, actualBytes.length, "Generated response has incorrect length");
+        assertArrayEquals(expected, actualBytes, "Generated response differs from expected");
     }
 
     @Test

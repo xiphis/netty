@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,56 +17,41 @@
 package io.netty.handler.codec.http;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.handler.codec.AsciiString;
-import io.netty.handler.codec.TextHeaderProcessor;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.util.AsciiString;
+import io.netty.util.CharsetUtil;
 
-final class HttpHeadersEncoder implements TextHeaderProcessor {
+import static io.netty.handler.codec.http.HttpConstants.*;
+import static io.netty.handler.codec.http.HttpObjectEncoder.CRLF_SHORT;
 
-    private final ByteBuf buf;
+final class HttpHeadersEncoder {
+    private static final int COLON_AND_SPACE_SHORT = (COLON << 8) | SP;
 
-    HttpHeadersEncoder(ByteBuf buf) {
-        this.buf = buf;
+    private HttpHeadersEncoder() {
     }
 
-    @Override
-    public boolean process(CharSequence name, CharSequence value) throws Exception {
-        final ByteBuf buf = this.buf;
+    static void encoderHeader(CharSequence name, CharSequence value, ByteBuf buf) {
         final int nameLen = name.length();
         final int valueLen = value.length();
         final int entryLen = nameLen + valueLen + 4;
-        int offset = buf.writerIndex();
         buf.ensureWritable(entryLen);
-        writeAscii(buf, offset, name, nameLen);
+        int offset = buf.writerIndex();
+        writeAscii(buf, offset, name);
         offset += nameLen;
-        buf.setByte(offset ++, ':');
-        buf.setByte(offset ++, ' ');
-        writeAscii(buf, offset, value, valueLen);
+        ByteBufUtil.setShortBE(buf, offset, COLON_AND_SPACE_SHORT);
+        offset += 2;
+        writeAscii(buf, offset, value);
         offset += valueLen;
-        buf.setByte(offset ++, '\r');
-        buf.setByte(offset ++, '\n');
+        ByteBufUtil.setShortBE(buf, offset, CRLF_SHORT);
+        offset += 2;
         buf.writerIndex(offset);
-        return true;
     }
 
-    private static void writeAscii(ByteBuf buf, int offset, CharSequence value, int valueLen) {
+    private static void writeAscii(ByteBuf buf, int offset, CharSequence value) {
         if (value instanceof AsciiString) {
-            writeAsciiString(buf, offset, (AsciiString) value, valueLen);
+            ByteBufUtil.copy((AsciiString) value, 0, buf, offset, value.length());
         } else {
-            writeCharSequence(buf, offset, value, valueLen);
+            buf.setCharSequence(offset, value, CharsetUtil.US_ASCII);
         }
-    }
-
-    private static void writeAsciiString(ByteBuf buf, int offset, AsciiString value, int valueLen) {
-        value.copy(0, buf, offset, valueLen);
-    }
-
-    private static void writeCharSequence(ByteBuf buf, int offset, CharSequence value, int valueLen) {
-        for (int i = 0; i < valueLen; i ++) {
-            buf.setByte(offset ++, c2b(value.charAt(i)));
-        }
-    }
-
-    private static int c2b(char ch) {
-        return ch < 256? (byte) ch : '?';
     }
 }

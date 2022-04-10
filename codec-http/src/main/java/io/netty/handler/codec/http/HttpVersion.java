@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,16 +15,20 @@
  */
 package io.netty.handler.codec.http;
 
+import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
+import static io.netty.util.internal.ObjectUtil.checkNonEmptyAfterTrim;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.util.CharsetUtil;
+import io.netty.util.internal.ObjectUtil;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * The version of HTTP or its derived protocols, such as
- * <a href="http://en.wikipedia.org/wiki/Real_Time_Streaming_Protocol">RTSP</a> and
- * <a href="http://en.wikipedia.org/wiki/Internet_Content_Adaptation_Protocol">ICAP</a>.
+ * <a href="https://en.wikipedia.org/wiki/Real_Time_Streaming_Protocol">RTSP</a> and
+ * <a href="https://en.wikipedia.org/wiki/Internet_Content_Adaptation_Protocol">ICAP</a>.
  */
 public class HttpVersion implements Comparable<HttpVersion> {
 
@@ -53,14 +57,12 @@ public class HttpVersion implements Comparable<HttpVersion> {
      * returned.
      */
     public static HttpVersion valueOf(String text) {
-        if (text == null) {
-            throw new NullPointerException("text");
-        }
+        ObjectUtil.checkNotNull(text, "text");
 
         text = text.trim();
 
         if (text.isEmpty()) {
-            throw new IllegalArgumentException("text is empty");
+            throw new IllegalArgumentException("text is empty (possibly HTTP/0.9)");
         }
 
         // Try to match without convert to uppercase first as this is what 99% of all clients
@@ -68,8 +70,8 @@ public class HttpVersion implements Comparable<HttpVersion> {
         // expected to be case-sensitive
         //
         // See:
-        // * http://trac.tools.ietf.org/wg/httpbis/trac/ticket/1
-        // * http://trac.tools.ietf.org/wg/httpbis/trac/wiki
+        // * https://trac.tools.ietf.org/wg/httpbis/trac/ticket/1
+        // * https://trac.tools.ietf.org/wg/httpbis/trac/wiki
         //
         HttpVersion version = version0(text);
         if (version == null) {
@@ -99,22 +101,15 @@ public class HttpVersion implements Comparable<HttpVersion> {
      * Creates a new HTTP version with the specified version string.  You will
      * not need to create a new instance unless you are implementing a protocol
      * derived from HTTP, such as
-     * <a href="http://en.wikipedia.org/wiki/Real_Time_Streaming_Protocol">RTSP</a> and
-     * <a href="http://en.wikipedia.org/wiki/Internet_Content_Adaptation_Protocol">ICAP</a>.
+     * <a href="https://en.wikipedia.org/wiki/Real_Time_Streaming_Protocol">RTSP</a> and
+     * <a href="https://en.wikipedia.org/wiki/Internet_Content_Adaptation_Protocol">ICAP</a>.
      *
      * @param keepAliveDefault
      *        {@code true} if and only if the connection is kept alive unless
      *        the {@code "Connection"} header is set to {@code "close"} explicitly.
      */
     public HttpVersion(String text, boolean keepAliveDefault) {
-        if (text == null) {
-            throw new NullPointerException("text");
-        }
-
-        text = text.trim().toUpperCase();
-        if (text.isEmpty()) {
-            throw new IllegalArgumentException("empty text");
-        }
+        text = checkNonEmptyAfterTrim(text, "text").toUpperCase();
 
         Matcher m = VERSION_PATTERN.matcher(text);
         if (!m.matches()) {
@@ -133,8 +128,8 @@ public class HttpVersion implements Comparable<HttpVersion> {
      * Creates a new HTTP version with the specified protocol name and version
      * numbers.  You will not need to create a new instance unless you are
      * implementing a protocol derived from HTTP, such as
-     * <a href="http://en.wikipedia.org/wiki/Real_Time_Streaming_Protocol">RTSP</a> and
-     * <a href="http://en.wikipedia.org/wiki/Internet_Content_Adaptation_Protocol">ICAP</a>
+     * <a href="https://en.wikipedia.org/wiki/Real_Time_Streaming_Protocol">RTSP</a> and
+     * <a href="https://en.wikipedia.org/wiki/Internet_Content_Adaptation_Protocol">ICAP</a>
      *
      * @param keepAliveDefault
      *        {@code true} if and only if the connection is kept alive unless
@@ -149,14 +144,7 @@ public class HttpVersion implements Comparable<HttpVersion> {
     private HttpVersion(
             String protocolName, int majorVersion, int minorVersion,
             boolean keepAliveDefault, boolean bytes) {
-        if (protocolName == null) {
-            throw new NullPointerException("protocolName");
-        }
-
-        protocolName = protocolName.trim().toUpperCase();
-        if (protocolName.isEmpty()) {
-            throw new IllegalArgumentException("empty protocolName");
-        }
+        protocolName = checkNonEmptyAfterTrim(protocolName, "protocolName").toUpperCase();
 
         for (int i = 0; i < protocolName.length(); i ++) {
             if (Character.isISOControl(protocolName.charAt(i)) ||
@@ -165,12 +153,8 @@ public class HttpVersion implements Comparable<HttpVersion> {
             }
         }
 
-        if (majorVersion < 0) {
-            throw new IllegalArgumentException("negative majorVersion");
-        }
-        if (minorVersion < 0) {
-            throw new IllegalArgumentException("negative minorVersion");
-        }
+        checkPositiveOrZero(majorVersion, "majorVersion");
+        checkPositiveOrZero(minorVersion, "minorVersion");
 
         this.protocolName = protocolName;
         this.majorVersion = majorVersion;
@@ -264,7 +248,7 @@ public class HttpVersion implements Comparable<HttpVersion> {
 
     void encode(ByteBuf buf) {
         if (bytes == null) {
-            HttpHeaders.encodeAscii0(text, buf);
+            buf.writeCharSequence(text, CharsetUtil.US_ASCII);
         } else {
             buf.writeBytes(bytes);
         }

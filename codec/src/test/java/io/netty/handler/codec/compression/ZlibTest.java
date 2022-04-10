@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,21 +15,32 @@
  */
 package io.netty.handler.codec.compression;
 
+import io.netty.buffer.AbstractByteBufAllocator;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.util.CharsetUtil;
 import io.netty.util.ReferenceCountUtil;
-import io.netty.util.internal.ThreadLocalRandom;
-import org.junit.Test;
+import io.netty.util.internal.EmptyArrays;
+import io.netty.util.internal.PlatformDependent;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.Random;
 import java.util.zip.DeflaterOutputStream;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public abstract class ZlibTest {
 
@@ -37,8 +48,8 @@ public abstract class ZlibTest {
     private static final byte[] BYTES_LARGE = new byte[1024 * 1024];
     private static final byte[] BYTES_LARGE2 = ("<!--?xml version=\"1.0\" encoding=\"ISO-8859-1\"?-->\n" +
             "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" " +
-            "\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">\n" +
-            "<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\" lang=\"en\"><head>\n" +
+            "\"https://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">\n" +
+            "<html xmlns=\"https://www.w3.org/1999/xhtml\" xml:lang=\"en\" lang=\"en\"><head>\n" +
             "    <title>Apache Tomcat</title>\n" +
             "</head>\n" +
             '\n' +
@@ -79,13 +90,17 @@ public abstract class ZlibTest {
             "</body></html>").getBytes(CharsetUtil.UTF_8);
 
     static {
-        ThreadLocalRandom rand = ThreadLocalRandom.current();
+        Random rand = PlatformDependent.threadLocalRandom();
         rand.nextBytes(BYTES_SMALL);
         rand.nextBytes(BYTES_LARGE);
     }
 
+    protected ZlibDecoder createDecoder(ZlibWrapper wrapper) {
+        return createDecoder(wrapper, 0);
+    }
+
     protected abstract ZlibEncoder createEncoder(ZlibWrapper wrapper);
-    protected abstract ZlibDecoder createDecoder(ZlibWrapper wrapper);
+    protected abstract ZlibDecoder createDecoder(ZlibWrapper wrapper, int maxAllocation);
 
     @Test
     public void testGZIP2() throws Exception {
@@ -95,13 +110,67 @@ public abstract class ZlibTest {
 
         EmbeddedChannel chDecoderGZip = new EmbeddedChannel(createDecoder(ZlibWrapper.GZIP));
         try {
-            chDecoderGZip.writeInbound(deflatedData.copy());
+            while (deflatedData.isReadable()) {
+                chDecoderGZip.writeInbound(deflatedData.readRetainedSlice(1));
+            }
+            deflatedData.release();
             assertTrue(chDecoderGZip.finish());
-            ByteBuf buf = chDecoderGZip.readInbound();
+            ByteBuf buf = Unpooled.buffer();
+            for (;;) {
+                ByteBuf b = chDecoderGZip.readInbound();
+                if (b == null) {
+                    break;
+                }
+                buf.writeBytes(b);
+                b.release();
+            }
             assertEquals(buf, data);
             assertNull(chDecoderGZip.readInbound());
             data.release();
+            buf.release();
+        } finally {
+            dispose(chDecoderGZip);
+        }
+    }
+
+    @Test
+    public void testGZIP3() throws Exception {
+        byte[] bytes = "Foo".getBytes(CharsetUtil.UTF_8);
+        ByteBuf data = Unpooled.wrappedBuffer(bytes);
+        ByteBuf deflatedData = Unpooled.wrappedBuffer(
+                new byte[]{
+                        31, -117, // magic number
+                        8, // CM
+                        2, // FLG.FHCRC
+                        0, 0, 0, 0, // MTIME
+                        0, // XFL
+                        7, // OS
+                        -66, -77, // CRC16
+                        115, -53, -49, 7, 0, // compressed blocks
+                        -63, 35, 62, -76, // CRC32
+                        3, 0, 0, 0 // ISIZE
+                }
+        );
+
+        EmbeddedChannel chDecoderGZip = new EmbeddedChannel(createDecoder(ZlibWrapper.GZIP));
+        try {
+            while (deflatedData.isReadable()) {
+                chDecoderGZip.writeInbound(deflatedData.readRetainedSlice(1));
+            }
             deflatedData.release();
+            assertTrue(chDecoderGZip.finish());
+            ByteBuf buf = Unpooled.buffer();
+            for (;;) {
+                ByteBuf b = chDecoderGZip.readInbound();
+                if (b == null) {
+                    break;
+                }
+                buf.writeBytes(b);
+                b.release();
+            }
+            assertEquals(buf, data);
+            assertNull(chDecoderGZip.readInbound());
+            data.release();
             buf.release();
         } finally {
             dispose(chDecoderGZip);
@@ -113,8 +182,9 @@ public abstract class ZlibTest {
         EmbeddedChannel chDecoderZlib = new EmbeddedChannel(createDecoder(decoderWrapper));
 
         try {
-            chEncoder.writeOutbound(data.copy());
+            chEncoder.writeOutbound(data.retain());
             chEncoder.flush();
+            data.resetReaderIndex();
 
             for (;;) {
                 ByteBuf deflatedData = chEncoder.readOutbound();
@@ -188,7 +258,7 @@ public abstract class ZlibTest {
                 buf.release();
                 decoded = true;
             }
-            assertFalse("should decode nothing", decoded);
+            assertFalse(decoded, "should decode nothing");
 
             assertFalse(chDecoderZlib.finish());
         } finally {
@@ -217,9 +287,9 @@ public abstract class ZlibTest {
     }
 
     // Test for https://github.com/netty/netty/issues/2572
-    private void testCompressLarge2(ZlibWrapper decoderWrapper, byte[] compressed, byte[] data) throws Exception {
+    private void testDecompressOnly(ZlibWrapper decoderWrapper, byte[] compressed, byte[] data) throws Exception {
         EmbeddedChannel chDecoder = new EmbeddedChannel(createDecoder(decoderWrapper));
-        chDecoder.writeInbound(Unpooled.wrappedBuffer(compressed));
+        chDecoder.writeInbound(Unpooled.copiedBuffer(compressed));
         assertTrue(chDecoder.finish());
 
         ByteBuf decoded = Unpooled.buffer(data.length);
@@ -232,7 +302,7 @@ public abstract class ZlibTest {
             decoded.writeBytes(buf);
             buf.release();
         }
-        assertEquals(Unpooled.wrappedBuffer(data), decoded);
+        assertEquals(Unpooled.copiedBuffer(data), decoded);
         decoded.release();
     }
 
@@ -253,7 +323,7 @@ public abstract class ZlibTest {
         testCompressNone(ZlibWrapper.ZLIB, ZlibWrapper.ZLIB);
         testCompressSmall(ZlibWrapper.ZLIB, ZlibWrapper.ZLIB);
         testCompressLarge(ZlibWrapper.ZLIB, ZlibWrapper.ZLIB);
-        testCompressLarge2(ZlibWrapper.ZLIB, deflate(BYTES_LARGE2), BYTES_LARGE2);
+        testDecompressOnly(ZlibWrapper.ZLIB, deflate(BYTES_LARGE2), BYTES_LARGE2);
     }
 
     @Test
@@ -268,7 +338,56 @@ public abstract class ZlibTest {
         testCompressNone(ZlibWrapper.GZIP, ZlibWrapper.GZIP);
         testCompressSmall(ZlibWrapper.GZIP, ZlibWrapper.GZIP);
         testCompressLarge(ZlibWrapper.GZIP, ZlibWrapper.GZIP);
-        testCompressLarge2(ZlibWrapper.GZIP, gzip(BYTES_LARGE2), BYTES_LARGE2);
+        testDecompressOnly(ZlibWrapper.GZIP, gzip(BYTES_LARGE2), BYTES_LARGE2);
+    }
+
+    @Test
+    public void testGZIPCompressOnly() throws Exception {
+        testGZIPCompressOnly0(null); // Do not write anything; just finish the stream.
+        testGZIPCompressOnly0(EmptyArrays.EMPTY_BYTES); // Write an empty array.
+        testGZIPCompressOnly0(BYTES_SMALL);
+        testGZIPCompressOnly0(BYTES_LARGE);
+    }
+
+    private void testGZIPCompressOnly0(byte[] data) throws IOException {
+        EmbeddedChannel chEncoder = new EmbeddedChannel(createEncoder(ZlibWrapper.GZIP));
+        if (data != null) {
+            chEncoder.writeOutbound(Unpooled.wrappedBuffer(data));
+        }
+        assertTrue(chEncoder.finish());
+
+        ByteBuf encoded = Unpooled.buffer();
+        for (;;) {
+            ByteBuf buf = chEncoder.readOutbound();
+            if (buf == null) {
+                break;
+            }
+            encoded.writeBytes(buf);
+            buf.release();
+        }
+
+        ByteBuf decoded = Unpooled.buffer();
+        GZIPInputStream stream = new GZIPInputStream(new ByteBufInputStream(encoded, true));
+        try {
+            byte[] buf = new byte[8192];
+            for (;;) {
+                int readBytes = stream.read(buf);
+                if (readBytes < 0) {
+                    break;
+                }
+                decoded.writeBytes(buf, 0, readBytes);
+            }
+        } finally {
+            stream.close();
+        }
+
+        if (data != null) {
+            assertEquals(Unpooled.wrappedBuffer(data), decoded);
+        } else {
+            assertFalse(decoded.isReadable());
+        }
+
+        decoded.release();
     }
 
     @Test
@@ -292,6 +411,26 @@ public abstract class ZlibTest {
         testCompressLarge(ZlibWrapper.GZIP, ZlibWrapper.ZLIB_OR_NONE);
     }
 
+    @Test
+    public void testMaxAllocation() throws Exception {
+        int maxAllocation = 1024;
+        ZlibDecoder decoder = createDecoder(ZlibWrapper.ZLIB, maxAllocation);
+        final EmbeddedChannel chDecoder = new EmbeddedChannel(decoder);
+        TestByteBufAllocator alloc = new TestByteBufAllocator(chDecoder.alloc());
+        chDecoder.config().setAllocator(alloc);
+
+        DecompressionException e = assertThrows(DecompressionException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                chDecoder.writeInbound(Unpooled.wrappedBuffer(deflate(BYTES_LARGE)));
+            }
+        });
+        assertTrue(e.getMessage().startsWith("Decompression buffer has reached maximum size"));
+        assertEquals(maxAllocation, alloc.getMaxAllocation());
+        assertTrue(decoder.isClosed());
+        assertFalse(chDecoder.finish());
+    }
+
     private static byte[] gzip(byte[] bytes) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         GZIPOutputStream stream = new GZIPOutputStream(out);
@@ -306,5 +445,35 @@ public abstract class ZlibTest {
         stream.write(bytes);
         stream.close();
         return out.toByteArray();
+    }
+
+    private static final class TestByteBufAllocator extends AbstractByteBufAllocator {
+        private final ByteBufAllocator wrapped;
+        private int maxAllocation;
+
+        TestByteBufAllocator(ByteBufAllocator wrapped) {
+            this.wrapped = wrapped;
+        }
+
+        public int getMaxAllocation() {
+            return maxAllocation;
+        }
+
+        @Override
+        public boolean isDirectBufferPooled() {
+            return wrapped.isDirectBufferPooled();
+        }
+
+        @Override
+        protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
+            maxAllocation = Math.max(maxAllocation, maxCapacity);
+            return wrapped.heapBuffer(initialCapacity, maxCapacity);
+        }
+
+        @Override
+        protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
+            maxAllocation = Math.max(maxAllocation, maxCapacity);
+            return wrapped.directBuffer(initialCapacity, maxCapacity);
+        }
     }
 }

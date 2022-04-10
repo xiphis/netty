@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,7 +17,9 @@ package io.netty.handler.codec.http.multipart;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelException;
-import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpHeaderValues;
+import io.netty.util.internal.ObjectUtil;
 
 import java.io.File;
 import java.io.IOException;
@@ -35,6 +37,10 @@ public class DiskFileUpload extends AbstractDiskHttpData implements FileUpload {
 
     public static final String postfix = ".tmp";
 
+    private final String baseDir;
+
+    private final boolean deleteOnExit;
+
     private String filename;
 
     private String contentType;
@@ -42,11 +48,19 @@ public class DiskFileUpload extends AbstractDiskHttpData implements FileUpload {
     private String contentTransferEncoding;
 
     public DiskFileUpload(String name, String filename, String contentType,
-            String contentTransferEncoding, Charset charset, long size) {
+            String contentTransferEncoding, Charset charset, long size, String baseDir, boolean deleteOnExit) {
         super(name, charset, size);
         setFilename(filename);
         setContentType(contentType);
         setContentTransferEncoding(contentTransferEncoding);
+        this.baseDir = baseDir == null ? baseDirectory : baseDir;
+        this.deleteOnExit = deleteOnExit;
+    }
+
+    public DiskFileUpload(String name, String filename, String contentType,
+            String contentTransferEncoding, Charset charset, long size) {
+        this(name, filename, contentType, contentTransferEncoding,
+                charset, size, baseDirectory, deleteOnExitTemporaryFile);
     }
 
     @Override
@@ -61,24 +75,17 @@ public class DiskFileUpload extends AbstractDiskHttpData implements FileUpload {
 
     @Override
     public void setFilename(String filename) {
-        if (filename == null) {
-            throw new NullPointerException("filename");
-        }
-        this.filename = filename;
+        this.filename = ObjectUtil.checkNotNull(filename, "filename");
     }
 
     @Override
     public int hashCode() {
-        return getName().hashCode();
+        return FileUploadUtil.hashCode(this);
     }
 
     @Override
     public boolean equals(Object o) {
-        if (!(o instanceof Attribute)) {
-            return false;
-        }
-        Attribute attribute = (Attribute) o;
-        return getName().equalsIgnoreCase(attribute.getName());
+        return o instanceof FileUpload && FileUploadUtil.equals(this, (FileUpload) o);
     }
 
     @Override
@@ -91,21 +98,12 @@ public class DiskFileUpload extends AbstractDiskHttpData implements FileUpload {
     }
 
     public int compareTo(FileUpload o) {
-        int v;
-        v = getName().compareToIgnoreCase(o.getName());
-        if (v != 0) {
-            return v;
-        }
-        // TODO should we compare size ?
-        return v;
+        return FileUploadUtil.compareTo(this, o);
     }
 
     @Override
     public void setContentType(String contentType) {
-        if (contentType == null) {
-            throw new NullPointerException("contentType");
-        }
-        this.contentType = contentType;
+        this.contentType = ObjectUtil.checkNotNull(contentType, "contentType");
     }
 
     @Override
@@ -132,32 +130,30 @@ public class DiskFileUpload extends AbstractDiskHttpData implements FileUpload {
             // Should not occur.
         }
 
-        return HttpPostBodyUtil.CONTENT_DISPOSITION + ": " +
-            HttpPostBodyUtil.FORM_DATA + "; " + HttpPostBodyUtil.NAME + "=\"" + getName() +
-                "\"; " + HttpPostBodyUtil.FILENAME + "=\"" + filename + "\"\r\n" +
-                HttpHeaders.Names.CONTENT_TYPE + ": " + contentType +
-                (getCharset() != null? "; " + HttpHeaders.Values.CHARSET + '=' + getCharset() + "\r\n" : "\r\n") +
-                HttpHeaders.Names.CONTENT_LENGTH + ": " + length() + "\r\n" +
+        return HttpHeaderNames.CONTENT_DISPOSITION + ": " +
+               HttpHeaderValues.FORM_DATA + "; " + HttpHeaderValues.NAME + "=\"" + getName() +
+                "\"; " + HttpHeaderValues.FILENAME + "=\"" + filename + "\"\r\n" +
+                HttpHeaderNames.CONTENT_TYPE + ": " + contentType +
+                (getCharset() != null? "; " + HttpHeaderValues.CHARSET + '=' + getCharset().name() + "\r\n" : "\r\n") +
+                HttpHeaderNames.CONTENT_LENGTH + ": " + length() + "\r\n" +
                 "Completed: " + isCompleted() +
                 "\r\nIsInMemory: " + isInMemory() + "\r\nRealFile: " +
-                file.getAbsolutePath() + " DefaultDeleteAfter: " +
-                deleteOnExitTemporaryFile;
+                (file != null ? file.getAbsolutePath() : "null") + " DeleteAfter: " + deleteOnExit;
     }
 
     @Override
     protected boolean deleteOnExit() {
-        return deleteOnExitTemporaryFile;
+        return deleteOnExit;
     }
 
     @Override
     protected String getBaseDirectory() {
-        return baseDirectory;
+        return baseDir;
     }
 
     @Override
     protected String getDiskFilename() {
-        File file = new File(filename);
-        return file.getName();
+        return "upload";
     }
 
     @Override
@@ -172,27 +168,44 @@ public class DiskFileUpload extends AbstractDiskHttpData implements FileUpload {
 
     @Override
     public FileUpload copy() {
-        DiskFileUpload upload = new DiskFileUpload(getName(),
-                getFilename(), getContentType(), getContentTransferEncoding(), getCharset(), size);
-        ByteBuf buf = content();
-        if (buf != null) {
-            try {
-                upload.setContent(buf.copy());
-            } catch (IOException e) {
-                throw new ChannelException(e);
-            }
-        }
-        return upload;
+        final ByteBuf content = content();
+        return replace(content != null ? content.copy() : null);
     }
 
     @Override
     public FileUpload duplicate() {
-        DiskFileUpload upload = new DiskFileUpload(getName(),
-                getFilename(), getContentType(), getContentTransferEncoding(), getCharset(), size);
-        ByteBuf buf = content();
-        if (buf != null) {
+        final ByteBuf content = content();
+        return replace(content != null ? content.duplicate() : null);
+    }
+
+    @Override
+    public FileUpload retainedDuplicate() {
+        ByteBuf content = content();
+        if (content != null) {
+            content = content.retainedDuplicate();
+            boolean success = false;
             try {
-                upload.setContent(buf.duplicate());
+                FileUpload duplicate = replace(content);
+                success = true;
+                return duplicate;
+            } finally {
+                if (!success) {
+                    content.release();
+                }
+            }
+        } else {
+            return replace(null);
+        }
+    }
+
+    @Override
+    public FileUpload replace(ByteBuf content) {
+        DiskFileUpload upload = new DiskFileUpload(
+                getName(), getFilename(), getContentType(), getContentTransferEncoding(), getCharset(), size,
+                baseDir, deleteOnExit);
+        if (content != null) {
+            try {
+                upload.setContent(content);
             } catch (IOException e) {
                 throw new ChannelException(e);
             }

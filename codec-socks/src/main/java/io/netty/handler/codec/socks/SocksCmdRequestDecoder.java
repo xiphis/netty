@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -19,7 +19,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ReplayingDecoder;
 import io.netty.handler.codec.socks.SocksCmdRequestDecoder.State;
-import io.netty.util.CharsetUtil;
+import io.netty.util.NetUtil;
+import io.netty.util.internal.UnstableApi;
 
 import java.util.List;
 
@@ -29,15 +30,8 @@ import java.util.List;
  */
 public class SocksCmdRequestDecoder extends ReplayingDecoder<State> {
 
-    private SocksProtocolVersion version;
-    private int fieldLength;
     private SocksCmdType cmdType;
     private SocksAddressType addressType;
-    @SuppressWarnings("UnusedDeclaration")
-    private byte reserved;
-    private String host;
-    private int port;
-    private SocksRequest msg = SocksCommonUtils.UNKNOWN_SOCKS_REQUEST;
 
     public SocksCmdRequestDecoder() {
         super(State.CHECK_PROTOCOL_VERSION);
@@ -47,49 +41,60 @@ public class SocksCmdRequestDecoder extends ReplayingDecoder<State> {
     protected void decode(ChannelHandlerContext ctx, ByteBuf byteBuf, List<Object> out) throws Exception {
         switch (state()) {
             case CHECK_PROTOCOL_VERSION: {
-                version = SocksProtocolVersion.valueOf(byteBuf.readByte());
-                if (version != SocksProtocolVersion.SOCKS5) {
+                if (byteBuf.readByte() != SocksProtocolVersion.SOCKS5.byteValue()) {
+                    out.add(SocksCommonUtils.UNKNOWN_SOCKS_REQUEST);
                     break;
                 }
                 checkpoint(State.READ_CMD_HEADER);
             }
             case READ_CMD_HEADER: {
                 cmdType = SocksCmdType.valueOf(byteBuf.readByte());
-                reserved = byteBuf.readByte();
+                byteBuf.skipBytes(1); // reserved
                 addressType = SocksAddressType.valueOf(byteBuf.readByte());
                 checkpoint(State.READ_CMD_ADDRESS);
             }
             case READ_CMD_ADDRESS: {
                 switch (addressType) {
                     case IPv4: {
-                        host = SocksCommonUtils.intToIp(byteBuf.readInt());
-                        port = byteBuf.readUnsignedShort();
-                        msg = new SocksCmdRequest(cmdType, addressType, host, port);
+                        String host = NetUtil.intToIpAddress(byteBuf.readInt());
+                        int port = byteBuf.readUnsignedShort();
+                        out.add(new SocksCmdRequest(cmdType, addressType, host, port));
                         break;
                     }
                     case DOMAIN: {
-                        fieldLength = byteBuf.readByte();
-                        host = byteBuf.readBytes(fieldLength).toString(CharsetUtil.US_ASCII);
-                        port = byteBuf.readUnsignedShort();
-                        msg = new SocksCmdRequest(cmdType, addressType, host, port);
+                        int fieldLength = byteBuf.readByte();
+                        String host = SocksCommonUtils.readUsAscii(byteBuf, fieldLength);
+                        int port = byteBuf.readUnsignedShort();
+                        out.add(new SocksCmdRequest(cmdType, addressType, host, port));
                         break;
                     }
                     case IPv6: {
-                        host = SocksCommonUtils.ipv6toStr(byteBuf.readBytes(16).array());
-                        port = byteBuf.readUnsignedShort();
-                        msg = new SocksCmdRequest(cmdType, addressType, host, port);
+                        byte[] bytes = new byte[16];
+                        byteBuf.readBytes(bytes);
+                        String host = SocksCommonUtils.ipv6toStr(bytes);
+                        int port = byteBuf.readUnsignedShort();
+                        out.add(new SocksCmdRequest(cmdType, addressType, host, port));
                         break;
                     }
-                    case UNKNOWN:
+                    case UNKNOWN: {
+                        out.add(SocksCommonUtils.UNKNOWN_SOCKS_REQUEST);
                         break;
+                    }
+                    default: {
+                        throw new Error();
+                    }
                 }
+                break;
+            }
+            default: {
+                throw new Error();
             }
         }
         ctx.pipeline().remove(this);
-        out.add(msg);
     }
 
-    enum State {
+    @UnstableApi
+    public enum State {
         CHECK_PROTOCOL_VERSION,
         READ_CMD_HEADER,
         READ_CMD_ADDRESS

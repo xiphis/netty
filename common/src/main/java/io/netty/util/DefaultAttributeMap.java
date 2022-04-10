@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,158 +15,167 @@
  */
 package io.netty.util;
 
-import io.netty.util.internal.PlatformDependent;
+import io.netty.util.internal.ObjectUtil;
 
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 /**
- * Default {@link AttributeMap} implementation which use simple synchronization per bucket to keep the memory overhead
- * as low as possible.
+ * Default {@link AttributeMap} implementation which not exibit any blocking behaviour on attribute lookup while using a
+ * copy-on-write approach on the modify path.<br> Attributes lookup and remove exibit {@code O(logn)} time worst-case
+ * complexity, hence {@code attribute::set(null)} is to be preferred to {@code remove}.
  */
 public class DefaultAttributeMap implements AttributeMap {
 
-    @SuppressWarnings("rawtypes")
-    private static final AtomicReferenceFieldUpdater<DefaultAttributeMap, AtomicReferenceArray> updater;
+    private static final AtomicReferenceFieldUpdater<DefaultAttributeMap, DefaultAttribute[]> ATTRIBUTES_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(DefaultAttributeMap.class, DefaultAttribute[].class, "attributes");
+    private static final DefaultAttribute[] EMPTY_ATTRIBUTES = new DefaultAttribute[0];
 
-    static {
-        @SuppressWarnings("rawtypes")
-        AtomicReferenceFieldUpdater<DefaultAttributeMap, AtomicReferenceArray> referenceFieldUpdater =
-                PlatformDependent.newAtomicReferenceFieldUpdater(DefaultAttributeMap.class, "attributes");
-        if (referenceFieldUpdater == null) {
-            referenceFieldUpdater = AtomicReferenceFieldUpdater
-                            .newUpdater(DefaultAttributeMap.class, AtomicReferenceArray.class, "attributes");
+    /**
+     * Similarly to {@code Arrays::binarySearch} it perform a binary search optimized for this use case, in order to
+     * save polymorphic calls (on comparator side) and unnecessary class checks.
+     */
+    private static int searchAttributeByKey(DefaultAttribute[] sortedAttributes, AttributeKey<?> key) {
+        int low = 0;
+        int high = sortedAttributes.length - 1;
+
+        while (low <= high) {
+            int mid = low + high >>> 1;
+            DefaultAttribute midVal = sortedAttributes[mid];
+            AttributeKey midValKey = midVal.key;
+            if (midValKey == key) {
+                return mid;
+            }
+            int midValKeyId = midValKey.id();
+            int keyId = key.id();
+            assert midValKeyId != keyId;
+            boolean searchRight = midValKeyId < keyId;
+            if (searchRight) {
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
         }
-        updater = referenceFieldUpdater;
+
+        return -(low + 1);
     }
 
-    private static final int BUCKET_SIZE = 4;
-    private static final int MASK = BUCKET_SIZE  - 1;
+    private static void orderedCopyOnInsert(DefaultAttribute[] sortedSrc, int srcLength, DefaultAttribute[] copy,
+                                            DefaultAttribute toInsert) {
+        // let's walk backward, because as a rule of thumb, toInsert.key.id() tends to be higher for new keys
+        final int id = toInsert.key.id();
+        int i;
+        for (i = srcLength - 1; i >= 0; i--) {
+            DefaultAttribute attribute = sortedSrc[i];
+            assert attribute.key.id() != id;
+            if (attribute.key.id() < id) {
+                break;
+            }
+            copy[i + 1] = sortedSrc[i];
+        }
+        copy[i + 1] = toInsert;
+        final int toCopy = i + 1;
+        if (toCopy > 0) {
+            System.arraycopy(sortedSrc, 0, copy, 0, toCopy);
+        }
+    }
 
-    // Initialize lazily to reduce memory consumption; updated by AtomicReferenceFieldUpdater above.
-    @SuppressWarnings("UnusedDeclaration")
-    private volatile AtomicReferenceArray<DefaultAttribute<?>> attributes;
+    private volatile DefaultAttribute[] attributes = EMPTY_ATTRIBUTES;
 
     @SuppressWarnings("unchecked")
     @Override
     public <T> Attribute<T> attr(AttributeKey<T> key) {
-        if (key == null) {
-            throw new NullPointerException("key");
-        }
-        AtomicReferenceArray<DefaultAttribute<?>> attributes = this.attributes;
-        if (attributes == null) {
-            // Not using ConcurrentHashMap due to high memory consumption.
-            attributes = new AtomicReferenceArray<DefaultAttribute<?>>(BUCKET_SIZE);
-
-            if (!updater.compareAndSet(this, null, attributes)) {
-                attributes = this.attributes;
-            }
-        }
-
-        int i = index(key);
-        DefaultAttribute<?> head = attributes.get(i);
-        if (head == null) {
-            // No head exists yet which means we may be able to add the attribute without synchronization and just
-            // use compare and set. At worst we need to fallback to synchronization
-            head = new DefaultAttribute(key);
-            if (attributes.compareAndSet(i, null, head)) {
-                // we were able to add it so return the head right away
-                return (Attribute<T>) head;
+        ObjectUtil.checkNotNull(key, "key");
+        DefaultAttribute newAttribute = null;
+        for (;;) {
+            final DefaultAttribute[] attributes = this.attributes;
+            final int index = searchAttributeByKey(attributes, key);
+            final DefaultAttribute[] newAttributes;
+            if (index >= 0) {
+                final DefaultAttribute attribute = attributes[index];
+                assert attribute.key() == key;
+                if (!attribute.isRemoved()) {
+                    return attribute;
+                }
+                // let's try replace the removed attribute with a new one
+                if (newAttribute == null) {
+                    newAttribute = new DefaultAttribute<T>(this, key);
+                }
+                final int count = attributes.length;
+                newAttributes = Arrays.copyOf(attributes, count);
+                newAttributes[index] = newAttribute;
             } else {
-                head = attributes.get(i);
+                if (newAttribute == null) {
+                    newAttribute = new DefaultAttribute<T>(this, key);
+                }
+                final int count = attributes.length;
+                newAttributes = new DefaultAttribute[count + 1];
+                orderedCopyOnInsert(attributes, count, newAttributes, newAttribute);
             }
-        }
-
-        synchronized (head) {
-            DefaultAttribute<?> curr = head;
-            for (;;) {
-                if (!curr.removed && curr.key == key) {
-                    return (Attribute<T>) curr;
-                }
-
-                DefaultAttribute<?> next = curr.next;
-                if (next == null) {
-                    DefaultAttribute<T> attr = new DefaultAttribute<T>(head, key);
-                    curr.next =  attr;
-                    attr.prev = curr;
-                    return attr;
-                } else {
-                    curr = next;
-                }
+            if (ATTRIBUTES_UPDATER.compareAndSet(this, attributes, newAttributes)) {
+                return newAttribute;
             }
         }
     }
 
     @Override
     public <T> boolean hasAttr(AttributeKey<T> key) {
-        if (key == null) {
-            throw new NullPointerException("key");
-        }
-        AtomicReferenceArray<DefaultAttribute<?>> attributes = this.attributes;
-        if (attributes == null) {
-            // no attribute exists
-            return false;
-        }
-
-        int i = index(key);
-        DefaultAttribute<?> head = attributes.get(i);
-        if (head == null) {
-            // No attribute exists which point to the bucket in which the head should be located
-            return false;
-        }
-
-        // check on the head can be done without synchronization
-        if (head.key == key && !head.removed) {
-            return true;
-        }
-
-        synchronized (head) {
-            // we need to synchronize on the head
-            DefaultAttribute<?> curr = head.next;
-            while (curr != null) {
-                if (!curr.removed && curr.key == key) {
-                    return true;
-                }
-                curr = curr.next;
-            }
-            return false;
-        }
+        ObjectUtil.checkNotNull(key, "key");
+        return searchAttributeByKey(attributes, key) >= 0;
     }
 
-    private static int index(AttributeKey<?> key) {
-        return key.id() & MASK;
+    private <T> void removeAttributeIfMatch(AttributeKey<T> key, DefaultAttribute<T> value) {
+        for (;;) {
+            final DefaultAttribute[] attributes = this.attributes;
+            final int index = searchAttributeByKey(attributes, key);
+            if (index < 0) {
+                return;
+            }
+            final DefaultAttribute attribute = attributes[index];
+            assert attribute.key() == key;
+            if (attribute != value) {
+                return;
+            }
+            final int count = attributes.length;
+            final int newCount = count - 1;
+            final DefaultAttribute[] newAttributes =
+                    newCount == 0? EMPTY_ATTRIBUTES : new DefaultAttribute[newCount];
+            // perform 2 bulk copies
+            System.arraycopy(attributes, 0, newAttributes, 0, index);
+            final int remaining = count - index - 1;
+            if (remaining > 0) {
+                System.arraycopy(attributes, index + 1, newAttributes, index, remaining);
+            }
+            if (ATTRIBUTES_UPDATER.compareAndSet(this, attributes, newAttributes)) {
+                return;
+            }
+        }
     }
 
     @SuppressWarnings("serial")
     private static final class DefaultAttribute<T> extends AtomicReference<T> implements Attribute<T> {
 
+        private static final AtomicReferenceFieldUpdater<DefaultAttribute, DefaultAttributeMap> MAP_UPDATER =
+                AtomicReferenceFieldUpdater.newUpdater(DefaultAttribute.class,
+                                                       DefaultAttributeMap.class, "attributeMap");
         private static final long serialVersionUID = -2661411462200283011L;
 
-        // The head of the linked-list this attribute belongs to, which may be itself
-        private final DefaultAttribute<?> head;
+        private volatile DefaultAttributeMap attributeMap;
         private final AttributeKey<T> key;
 
-        // Double-linked list to prev and next node to allow fast removal
-        private DefaultAttribute<?> prev;
-        private DefaultAttribute<?> next;
-
-        // Will be set to true one the attribute is removed via getAndRemove() or remove()
-        private volatile boolean removed;
-
-        DefaultAttribute(DefaultAttribute<?> head, AttributeKey<T> key) {
-            this.head = head;
-            this.key = key;
-        }
-
-        DefaultAttribute(AttributeKey<T> key) {
-            head = this;
+        DefaultAttribute(DefaultAttributeMap attributeMap, AttributeKey<T> key) {
+            this.attributeMap = attributeMap;
             this.key = key;
         }
 
         @Override
         public AttributeKey<T> key() {
             return key;
+        }
+
+        private boolean isRemoved() {
+            return attributeMap == null;
         }
 
         @Override
@@ -182,33 +191,22 @@ public class DefaultAttributeMap implements AttributeMap {
 
         @Override
         public T getAndRemove() {
-            removed = true;
+            final DefaultAttributeMap attributeMap = this.attributeMap;
+            final boolean removed = attributeMap != null && MAP_UPDATER.compareAndSet(this, attributeMap, null);
             T oldValue = getAndSet(null);
-            remove0();
+            if (removed) {
+                attributeMap.removeAttributeIfMatch(key, this);
+            }
             return oldValue;
         }
 
         @Override
         public void remove() {
-            removed = true;
+            final DefaultAttributeMap attributeMap = this.attributeMap;
+            final boolean removed = attributeMap != null && MAP_UPDATER.compareAndSet(this, attributeMap, null);
             set(null);
-            remove0();
-        }
-
-        private void remove0() {
-            synchronized (head) {
-                // We only update the linked-list structure if prev != null because if it is null this
-                // DefaultAttribute acts also as head. The head must never be removed completely and just be
-                // marked as removed as all synchronization is done on the head itself for each bucket.
-                // The head itself will be GC'ed once the DefaultAttributeMap is GC'ed. So at most 5 heads will
-                // be removed lazy as the array size is 5.
-                if (prev != null) {
-                    prev.next = next;
-
-                    if (next != null) {
-                        next.prev = prev;
-                    }
-                }
+            if (removed) {
+                attributeMap.removeAttributeIfMatch(key, this);
             }
         }
     }

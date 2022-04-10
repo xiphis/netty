@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,10 +17,12 @@
 /*
  * Written by Doug Lea with assistance from members of JCP JSR-166
  * Expert Group and released to the public domain, as explained at
- * http://creativecommons.org/publicdomain/zero/1.0/
+ * https://creativecommons.org/publicdomain/zero/1.0/
  */
 
 package io.netty.util.internal;
+
+import static io.netty.util.internal.ObjectUtil.checkPositive;
 
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
@@ -64,38 +66,54 @@ public final class ThreadLocalRandom extends Random {
 
     private static final AtomicLong seedUniquifier = new AtomicLong();
 
-    private static volatile long initialSeedUniquifier =
-            SystemPropertyUtil.getLong("io.netty.initialSeedUniquifier", 0);
+    private static volatile long initialSeedUniquifier;
 
     private static final Thread seedGeneratorThread;
-    private static final BlockingQueue<byte[]> seedQueue;
+    private static final BlockingQueue<Long> seedQueue;
     private static final long seedGeneratorStartTime;
     private static volatile long seedGeneratorEndTime;
 
     static {
+        initialSeedUniquifier = SystemPropertyUtil.getLong("io.netty.initialSeedUniquifier", 0);
         if (initialSeedUniquifier == 0) {
-            // Try to generate a real random number from /dev/random.
-            // Get from a different thread to avoid blocking indefinitely on a machine without much entrophy.
-            seedGeneratorThread = new Thread("initialSeedUniquifierGenerator") {
-                @Override
-                public void run() {
-                    final SecureRandom random = new SecureRandom(); // Get the real random seed from /dev/random
-                    final byte[] seed = random.generateSeed(8);
-                    seedGeneratorEndTime = System.nanoTime();
-                    seedQueue.add(seed);
-                }
-            };
-            seedGeneratorThread.setDaemon(true);
-            seedGeneratorThread.setUncaughtExceptionHandler(new UncaughtExceptionHandler() {
-                @Override
-                public void uncaughtException(Thread t, Throwable e) {
-                    logger.debug("An exception has been raised by {}", t.getName(), e);
-                }
-            });
+            boolean secureRandom = SystemPropertyUtil.getBoolean("java.util.secureRandomSeed", false);
+            if (secureRandom) {
+                seedQueue = new LinkedBlockingQueue<Long>();
+                seedGeneratorStartTime = System.nanoTime();
 
-            seedQueue = new LinkedBlockingQueue<byte[]>();
-            seedGeneratorStartTime = System.nanoTime();
-            seedGeneratorThread.start();
+                // Try to generate a real random number from /dev/random.
+                // Get from a different thread to avoid blocking indefinitely on a machine without much entropy.
+                seedGeneratorThread = new Thread("initialSeedUniquifierGenerator") {
+                    @Override
+                    public void run() {
+                        final SecureRandom random = new SecureRandom(); // Get the real random seed from /dev/random
+                        final byte[] seed = random.generateSeed(8);
+                        seedGeneratorEndTime = System.nanoTime();
+                        long s = ((long) seed[0] & 0xff) << 56 |
+                                 ((long) seed[1] & 0xff) << 48 |
+                                 ((long) seed[2] & 0xff) << 40 |
+                                 ((long) seed[3] & 0xff) << 32 |
+                                 ((long) seed[4] & 0xff) << 24 |
+                                 ((long) seed[5] & 0xff) << 16 |
+                                 ((long) seed[6] & 0xff) <<  8 |
+                                 (long) seed[7] & 0xff;
+                        seedQueue.add(s);
+                    }
+                };
+                seedGeneratorThread.setDaemon(true);
+                seedGeneratorThread.setUncaughtExceptionHandler(new UncaughtExceptionHandler() {
+                    @Override
+                    public void uncaughtException(Thread t, Throwable e) {
+                        logger.debug("An exception has been raised by {}", t.getName(), e);
+                    }
+                });
+                seedGeneratorThread.start();
+            } else {
+                initialSeedUniquifier = mix64(System.currentTimeMillis()) ^ mix64(System.nanoTime());
+                seedGeneratorThread = null;
+                seedQueue = null;
+                seedGeneratorStartTime = 0L;
+            }
         } else {
             seedGeneratorThread = null;
             seedQueue = null;
@@ -127,7 +145,7 @@ public final class ThreadLocalRandom extends Random {
             for (;;) {
                 final long waitTime = deadLine - System.nanoTime();
                 try {
-                    final byte[] seed;
+                    final Long seed;
                     if (waitTime <= 0) {
                         seed = seedQueue.poll();
                     } else {
@@ -135,15 +153,7 @@ public final class ThreadLocalRandom extends Random {
                     }
 
                     if (seed != null) {
-                        initialSeedUniquifier =
-                                ((long) seed[0] & 0xff) << 56 |
-                                ((long) seed[1] & 0xff) << 48 |
-                                ((long) seed[2] & 0xff) << 40 |
-                                ((long) seed[3] & 0xff) << 32 |
-                                ((long) seed[4] & 0xff) << 24 |
-                                ((long) seed[5] & 0xff) << 16 |
-                                ((long) seed[6] & 0xff) <<  8 |
-                                (long) seed[7] & 0xff;
+                        initialSeedUniquifier = seed;
                         break;
                     }
                 } catch (InterruptedException e) {
@@ -156,7 +166,7 @@ public final class ThreadLocalRandom extends Random {
                     seedGeneratorThread.interrupt();
                     logger.warn(
                             "Failed to generate a seed from SecureRandom within {} seconds. " +
-                            "Not enough entrophy?", timeoutSeconds
+                            "Not enough entropy?", timeoutSeconds
                     );
                     break;
                 }
@@ -209,6 +219,14 @@ public final class ThreadLocalRandom extends Random {
         }
     }
 
+    // Borrowed from
+    // http://gee.cs.oswego.edu/cgi-bin/viewcvs.cgi/jsr166/src/main/java/util/concurrent/ThreadLocalRandom.java
+    private static long mix64(long z) {
+        z = (z ^ (z >>> 33)) * 0xff51afd7ed558ccdL;
+        z = (z ^ (z >>> 33)) * 0xc4ceb9fe1a85ec53L;
+        return z ^ (z >>> 33);
+    }
+
     // same constants as Random, but must be redeclared because private
     private static final long multiplier = 0x5DEECE66DL;
     private static final long addend = 0xBL;
@@ -255,6 +273,7 @@ public final class ThreadLocalRandom extends Random {
      *
      * @throws UnsupportedOperationException always
      */
+    @Override
     public void setSeed(long seed) {
         if (initialized) {
             throw new UnsupportedOperationException();
@@ -262,6 +281,7 @@ public final class ThreadLocalRandom extends Random {
         rnd = (seed ^ multiplier) & mask;
     }
 
+    @Override
     protected int next(int bits) {
         rnd = (rnd * multiplier + addend) & mask;
         return (int) (rnd >>> (48 - bits));
@@ -294,9 +314,7 @@ public final class ThreadLocalRandom extends Random {
      * @throws IllegalArgumentException if n is not positive
      */
     public long nextLong(long n) {
-        if (n <= 0) {
-            throw new IllegalArgumentException("n must be positive");
-        }
+        checkPositive(n, "n");
 
         // Divide n by two until small enough for nextInt. On each
         // iteration (at most 31 of them but usually much less),
@@ -343,9 +361,7 @@ public final class ThreadLocalRandom extends Random {
      * @throws IllegalArgumentException if n is not positive
      */
     public double nextDouble(double n) {
-        if (n <= 0) {
-            throw new IllegalArgumentException("n must be positive");
-        }
+        checkPositive(n, "n");
         return nextDouble() * n;
     }
 

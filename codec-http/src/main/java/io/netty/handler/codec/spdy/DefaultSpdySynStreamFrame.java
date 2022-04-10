@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -14,6 +14,8 @@
  * under the License.
  */
 package io.netty.handler.codec.spdy;
+
+import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
 
 import io.netty.util.internal.StringUtil;
 
@@ -35,7 +37,19 @@ public class DefaultSpdySynStreamFrame extends DefaultSpdyHeadersFrame
      * @param priority           the priority of the stream
      */
     public DefaultSpdySynStreamFrame(int streamId, int associatedStreamId, byte priority) {
-        super(streamId);
+        this(streamId, associatedStreamId, priority, true);
+    }
+
+    /**
+     * Creates a new instance.
+     *
+     * @param streamId           the Stream-ID of this frame
+     * @param associatedStreamId the Associated-To-Stream-ID of this frame
+     * @param priority           the priority of the stream
+     * @param validateHeaders    validate the header names and values when adding them to the {@link SpdyHeaders}
+     */
+    public DefaultSpdySynStreamFrame(int streamId, int associatedStreamId, byte priority, boolean validateHeaders) {
+        super(streamId, validateHeaders);
         setAssociatedStreamId(associatedStreamId);
         setPriority(priority);
     }
@@ -65,11 +79,7 @@ public class DefaultSpdySynStreamFrame extends DefaultSpdyHeadersFrame
 
     @Override
     public SpdySynStreamFrame setAssociatedStreamId(int associatedStreamId) {
-        if (associatedStreamId < 0) {
-            throw new IllegalArgumentException(
-                    "Associated-To-Stream-ID cannot be negative: " +
-                    associatedStreamId);
-        }
+        checkPositiveOrZero(associatedStreamId, "associatedStreamId");
         this.associatedStreamId = associatedStreamId;
         return this;
     }
@@ -102,27 +112,27 @@ public class DefaultSpdySynStreamFrame extends DefaultSpdyHeadersFrame
 
     @Override
     public String toString() {
-        StringBuilder buf = new StringBuilder();
-        buf.append(StringUtil.simpleClassName(this));
-        buf.append("(last: ");
-        buf.append(isLast());
-        buf.append("; unidirectional: ");
-        buf.append(isUnidirectional());
-        buf.append(')');
-        buf.append(StringUtil.NEWLINE);
-        buf.append("--> Stream-ID = ");
-        buf.append(streamId());
-        buf.append(StringUtil.NEWLINE);
+        StringBuilder buf = new StringBuilder()
+            .append(StringUtil.simpleClassName(this))
+            .append("(last: ")
+            .append(isLast())
+            .append("; unidirectional: ")
+            .append(isUnidirectional())
+            .append(')')
+            .append(StringUtil.NEWLINE)
+            .append("--> Stream-ID = ")
+            .append(streamId())
+            .append(StringUtil.NEWLINE);
         if (associatedStreamId != 0) {
-            buf.append("--> Associated-To-Stream-ID = ");
-            buf.append(associatedStreamId());
-            buf.append(StringUtil.NEWLINE);
+            buf.append("--> Associated-To-Stream-ID = ")
+               .append(associatedStreamId())
+               .append(StringUtil.NEWLINE);
         }
-        buf.append("--> Priority = ");
-        buf.append(priority());
-        buf.append(StringUtil.NEWLINE);
-        buf.append("--> Headers:");
-        buf.append(StringUtil.NEWLINE);
+        buf.append("--> Priority = ")
+           .append(priority())
+           .append(StringUtil.NEWLINE)
+           .append("--> Headers:")
+           .append(StringUtil.NEWLINE);
         appendHeaders(buf);
 
         // Remove the last newline.

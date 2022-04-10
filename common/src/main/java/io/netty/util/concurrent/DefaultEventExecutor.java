@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -46,6 +46,16 @@ public final class DefaultEventExecutor extends SingleThreadEventExecutor {
 
     public DefaultEventExecutor(EventExecutorGroup parent, Executor executor) {
         super(parent, executor, true);
+    }
+
+    public DefaultEventExecutor(EventExecutorGroup parent, ThreadFactory threadFactory, int maxPendingTasks,
+                                RejectedExecutionHandler rejectedExecutionHandler) {
+        super(parent, threadFactory, true, maxPendingTasks, rejectedExecutionHandler);
+    }
+
+    public DefaultEventExecutor(EventExecutorGroup parent, Executor executor, int maxPendingTasks,
+                                RejectedExecutionHandler rejectedExecutionHandler) {
+        super(parent, executor, true, maxPendingTasks, rejectedExecutionHandler);
     }
 
     @Override

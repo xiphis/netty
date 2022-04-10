@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,12 +15,17 @@
  */
 package io.netty.channel;
 
-/**
- * ChannelFutureListener implementation which takes other {@link ChannelFuture}(s) and notifies them on completion.
- */
-public final class ChannelPromiseNotifier implements ChannelFutureListener {
+import io.netty.util.concurrent.PromiseNotifier;
 
-    private final ChannelPromise[] promises;
+/**
+ * ChannelFutureListener implementation which takes other {@link ChannelPromise}(s) and notifies them on completion.
+ *
+ * @deprecated use {@link PromiseNotifier}.
+ */
+@Deprecated
+public final class ChannelPromiseNotifier
+    extends PromiseNotifier<Void, ChannelFuture>
+    implements ChannelFutureListener {
 
     /**
      * Create a new instance
@@ -28,29 +33,16 @@ public final class ChannelPromiseNotifier implements ChannelFutureListener {
      * @param promises  the {@link ChannelPromise}s to notify once this {@link ChannelFutureListener} is notified.
      */
     public ChannelPromiseNotifier(ChannelPromise... promises) {
-        if (promises == null) {
-            throw new NullPointerException("promises");
-        }
-        for (ChannelPromise promise: promises) {
-            if (promise == null) {
-                throw new IllegalArgumentException("promises contains null ChannelPromise");
-            }
-        }
-        this.promises = promises.clone();
+        super(promises);
     }
 
-    @Override
-    public void operationComplete(ChannelFuture cf) throws Exception {
-        if (cf.isSuccess()) {
-            for (ChannelPromise p: promises) {
-                p.setSuccess();
-            }
-            return;
-        }
-
-        Throwable cause = cf.cause();
-        for (ChannelPromise p: promises) {
-            p.setFailure(cause);
-        }
+    /**
+     * Create a new instance
+     *
+     * @param logNotifyFailure {@code true} if logging should be done in case notification fails.
+     * @param promises  the {@link ChannelPromise}s to notify once this {@link ChannelFutureListener} is notified.
+     */
+    public ChannelPromiseNotifier(boolean logNotifyFailure, ChannelPromise... promises) {
+        super(logNotifyFailure, promises);
     }
 }

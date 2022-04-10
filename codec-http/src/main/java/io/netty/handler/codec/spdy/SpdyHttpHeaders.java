@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,7 +15,7 @@
  */
 package io.netty.handler.codec.spdy;
 
-import io.netty.handler.codec.AsciiString;
+import io.netty.util.AsciiString;
 
 /**
  * Provides the constants for the header names and the utility methods
@@ -28,25 +28,21 @@ public final class SpdyHttpHeaders {
      */
     public static final class Names {
         /**
-         * {@code "X-SPDY-Stream-ID"}
+         * {@code "x-spdy-stream-id"}
          */
-        public static final AsciiString STREAM_ID = new AsciiString("X-SPDY-Stream-ID");
+        public static final AsciiString STREAM_ID = AsciiString.cached("x-spdy-stream-id");
         /**
-         * {@code "X-SPDY-Associated-To-Stream-ID"}
+         * {@code "x-spdy-associated-to-stream-id"}
          */
-        public static final AsciiString ASSOCIATED_TO_STREAM_ID = new AsciiString("X-SPDY-Associated-To-Stream-ID");
+        public static final AsciiString ASSOCIATED_TO_STREAM_ID = AsciiString.cached("x-spdy-associated-to-stream-id");
         /**
-         * {@code "X-SPDY-Priority"}
+         * {@code "x-spdy-priority"}
          */
-        public static final AsciiString PRIORITY = new AsciiString("X-SPDY-Priority");
+        public static final AsciiString PRIORITY = AsciiString.cached("x-spdy-priority");
         /**
-         * {@code "X-SPDY-URL"}
+         * {@code "x-spdy-scheme"}
          */
-        public static final AsciiString URL = new AsciiString("X-SPDY-URL");
-        /**
-         * {@code "X-SPDY-Scheme"}
-         */
-        public static final AsciiString SCHEME = new AsciiString("X-SPDY-Scheme");
+        public static final AsciiString SCHEME = AsciiString.cached("x-spdy-scheme");
 
         private Names() { }
     }

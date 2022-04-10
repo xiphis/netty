@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,15 +20,19 @@ import io.netty.buffer.ByteBufAllocator;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.MessageSizeEstimator;
 import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.WriteBufferWaterMark;
 
 import java.io.IOException;
 import java.util.Map;
 
-import static io.netty.channel.ChannelOption.*;
+import static io.netty.channel.ChannelOption.SO_BACKLOG;
 
 /**
  * The default {@link UdtServerChannelConfig} implementation.
+ *
+ * @deprecated The UDT transport is no longer maintained and will be removed.
  */
+@Deprecated
 public class DefaultUdtServerChannelConfig extends DefaultUdtChannelConfig
         implements UdtServerChannelConfig {
 
@@ -85,15 +89,15 @@ public class DefaultUdtServerChannelConfig extends DefaultUdtChannelConfig
 
     @Override
     public UdtServerChannelConfig setProtocolReceiveBufferSize(
-            final int protocolReceiveBuferSize) {
-        super.setProtocolReceiveBufferSize(protocolReceiveBuferSize);
+            final int protocolReceiveBufferSize) {
+        super.setProtocolReceiveBufferSize(protocolReceiveBufferSize);
         return this;
     }
 
     @Override
     public UdtServerChannelConfig setProtocolSendBufferSize(
-            final int protocolSendBuferSize) {
-        super.setProtocolSendBufferSize(protocolSendBuferSize);
+            final int protocolSendBufferSize) {
+        super.setProtocolSendBufferSize(protocolSendBufferSize);
         return this;
     }
 
@@ -124,8 +128,8 @@ public class DefaultUdtServerChannelConfig extends DefaultUdtChannelConfig
 
     @Override
     public UdtServerChannelConfig setSystemReceiveBufferSize(
-            final int systemSendBuferSize) {
-        super.setSystemReceiveBufferSize(systemSendBuferSize);
+            final int systemSendBufferSize) {
+        super.setSystemReceiveBufferSize(systemSendBufferSize);
         return this;
     }
 
@@ -143,6 +147,7 @@ public class DefaultUdtServerChannelConfig extends DefaultUdtChannelConfig
     }
 
     @Override
+    @Deprecated
     public UdtServerChannelConfig setMaxMessagesPerRead(int maxMessagesPerRead) {
         super.setMaxMessagesPerRead(maxMessagesPerRead);
         return this;
@@ -187,6 +192,12 @@ public class DefaultUdtServerChannelConfig extends DefaultUdtChannelConfig
     @Override
     public UdtServerChannelConfig setWriteBufferHighWaterMark(int writeBufferHighWaterMark) {
         super.setWriteBufferHighWaterMark(writeBufferHighWaterMark);
+        return this;
+    }
+
+    @Override
+    public UdtServerChannelConfig setWriteBufferWaterMark(WriteBufferWaterMark writeBufferWaterMark) {
+        super.setWriteBufferWaterMark(writeBufferWaterMark);
         return this;
     }
 

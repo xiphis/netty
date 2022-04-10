@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,6 +16,7 @@
 
 package io.netty.util.concurrent;
 
+import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.StringUtil;
 
 import java.util.Locale;
@@ -33,6 +34,7 @@ public class DefaultThreadFactory implements ThreadFactory {
     private final String prefix;
     private final boolean daemon;
     private final int priority;
+    protected final ThreadGroup threadGroup;
 
     public DefaultThreadFactory(Class<?> poolType) {
         this(poolType, false, Thread.NORM_PRIORITY);
@@ -62,10 +64,8 @@ public class DefaultThreadFactory implements ThreadFactory {
         this(toPoolName(poolType), daemon, priority);
     }
 
-    private static String toPoolName(Class<?> poolType) {
-        if (poolType == null) {
-            throw new NullPointerException("poolType");
-        }
+    public static String toPoolName(Class<?> poolType) {
+        ObjectUtil.checkNotNull(poolType, "poolType");
 
         String poolName = StringUtil.simpleClassName(poolType);
         switch (poolName.length()) {
@@ -82,10 +82,9 @@ public class DefaultThreadFactory implements ThreadFactory {
         }
     }
 
-    public DefaultThreadFactory(String poolName, boolean daemon, int priority) {
-        if (poolName == null) {
-            throw new NullPointerException("poolName");
-        }
+    public DefaultThreadFactory(String poolName, boolean daemon, int priority, ThreadGroup threadGroup) {
+        ObjectUtil.checkNotNull(poolName, "poolName");
+
         if (priority < Thread.MIN_PRIORITY || priority > Thread.MAX_PRIORITY) {
             throw new IllegalArgumentException(
                     "priority: " + priority + " (expected: Thread.MIN_PRIORITY <= priority <= Thread.MAX_PRIORITY)");
@@ -94,20 +93,19 @@ public class DefaultThreadFactory implements ThreadFactory {
         prefix = poolName + '-' + poolId.incrementAndGet() + '-';
         this.daemon = daemon;
         this.priority = priority;
+        this.threadGroup = threadGroup;
+    }
+
+    public DefaultThreadFactory(String poolName, boolean daemon, int priority) {
+        this(poolName, daemon, priority, null);
     }
 
     @Override
     public Thread newThread(Runnable r) {
-        Thread t = newThread(new DefaultRunnableDecorator(r), prefix + nextId.incrementAndGet());
+        Thread t = newThread(FastThreadLocalRunnable.wrap(r), prefix + nextId.incrementAndGet());
         try {
-            if (t.isDaemon()) {
-                if (!daemon) {
-                    t.setDaemon(false);
-                }
-            } else {
-                if (daemon) {
-                    t.setDaemon(true);
-                }
+            if (t.isDaemon() != daemon) {
+                t.setDaemon(daemon);
             }
 
             if (t.getPriority() != priority) {
@@ -120,24 +118,6 @@ public class DefaultThreadFactory implements ThreadFactory {
     }
 
     protected Thread newThread(Runnable r, String name) {
-        return new FastThreadLocalThread(r, name);
-    }
-
-    private static final class DefaultRunnableDecorator implements Runnable {
-
-        private final Runnable r;
-
-        DefaultRunnableDecorator(Runnable r) {
-            this.r = r;
-        }
-
-        @Override
-        public void run() {
-            try {
-                r.run();
-            } finally {
-                FastThreadLocal.removeAll();
-            }
-        }
+        return new FastThreadLocalThread(threadGroup, r, name);
     }
 }

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -22,13 +22,14 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
 import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 
 /**
  * This example server aims to demonstrate
- * <a href="http://www.w3.org/TR/cors/">Cross Origin Resource Sharing</a> (CORS) in Netty.
+ * <a href="https://www.w3.org/TR/cors/">Cross Origin Resource Sharing</a> (CORS) in Netty.
  * It does not have a client like most of the other examples, but instead has
- * a html page that is loaded to try out CORS support in a web brower.
+ * a html page that is loaded to try out CORS support in a web browser.
  * <p>
  *
  * CORS is configured in {@link HttpCorsServerInitializer} and by updating the config you can
@@ -49,7 +50,7 @@ import io.netty.handler.ssl.util.SelfSignedCertificate;
  * <h3>Using a web server</h3>
  * To test CORS support you can serve the file {@code src/main/resources/cors/cors.html}
  * using a web server. You can then add a new host name to your systems hosts file, for
- * example if you are on Linux you may update /etc/hosts to add an addtional name
+ * example if you are on Linux you may update /etc/hosts to add an additional name
  * for you local system:
  * <pre>
  * 127.0.0.1   localhost domain1.com
@@ -80,7 +81,7 @@ public final class HttpCorsServer {
         final SslContext sslCtx;
         if (SSL) {
             SelfSignedCertificate ssc = new SelfSignedCertificate();
-            sslCtx = SslContext.newServerContext(ssc.certificate(), ssc.privateKey());
+            sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
         } else {
             sslCtx = null;
         }

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -22,6 +22,8 @@ import io.netty.channel.DefaultChannelConfig;
 import io.netty.channel.FixedRecvByteBufAllocator;
 import io.netty.channel.MessageSizeEstimator;
 import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.WriteBufferWaterMark;
+import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
@@ -43,8 +45,6 @@ public class DefaultDatagramChannelConfig extends DefaultChannelConfig implement
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(DefaultDatagramChannelConfig.class);
 
-    private static final RecvByteBufAllocator DEFAULT_RCVBUF_ALLOCATOR = new FixedRecvByteBufAllocator(2048);
-
     private final DatagramSocket javaSocket;
     private volatile boolean activeOnOpen;
 
@@ -52,12 +52,12 @@ public class DefaultDatagramChannelConfig extends DefaultChannelConfig implement
      * Creates a new instance.
      */
     public DefaultDatagramChannelConfig(DatagramChannel channel, DatagramSocket javaSocket) {
-        super(channel);
-        if (javaSocket == null) {
-            throw new NullPointerException("javaSocket");
-        }
-        this.javaSocket = javaSocket;
-        setRecvByteBufAllocator(DEFAULT_RCVBUF_ALLOCATOR);
+        super(channel, new FixedRecvByteBufAllocator(2048));
+        this.javaSocket = ObjectUtil.checkNotNull(javaSocket, "javaSocket");
+    }
+
+    protected final DatagramSocket javaSocket() {
+        return javaSocket;
     }
 
     @Override
@@ -158,8 +158,8 @@ public class DefaultDatagramChannelConfig extends DefaultChannelConfig implement
         try {
             // See: https://github.com/netty/netty/issues/576
             if (broadcast &&
-                !PlatformDependent.isWindows() && !PlatformDependent.isRoot() &&
-                !javaSocket.getLocalAddress().isAnyLocalAddress()) {
+                !javaSocket.getLocalAddress().isAnyLocalAddress() &&
+                !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
                 // Warn a user about the fact that a non-root user can't receive a
                 // broadcast packet on *nix if the socket is bound on non-wildcard address.
                 logger.warn(
@@ -373,6 +373,7 @@ public class DefaultDatagramChannelConfig extends DefaultChannelConfig implement
     }
 
     @Override
+    @Deprecated
     public DatagramChannelConfig setMaxMessagesPerRead(int maxMessagesPerRead) {
         super.setMaxMessagesPerRead(maxMessagesPerRead);
         return this;
@@ -415,8 +416,20 @@ public class DefaultDatagramChannelConfig extends DefaultChannelConfig implement
     }
 
     @Override
+    public DatagramChannelConfig setWriteBufferWaterMark(WriteBufferWaterMark writeBufferWaterMark) {
+        super.setWriteBufferWaterMark(writeBufferWaterMark);
+        return this;
+    }
+
+    @Override
     public DatagramChannelConfig setMessageSizeEstimator(MessageSizeEstimator estimator) {
         super.setMessageSizeEstimator(estimator);
+        return this;
+    }
+
+    @Override
+    public DatagramChannelConfig setMaxMessagesPerWrite(int maxMessagesPerWrite) {
+        super.setMaxMessagesPerWrite(maxMessagesPerWrite);
         return this;
     }
 }

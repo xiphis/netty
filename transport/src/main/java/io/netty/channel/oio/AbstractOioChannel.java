@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -21,28 +21,30 @@ import io.netty.channel.ChannelPromise;
 import io.netty.channel.EventLoop;
 import io.netty.channel.ThreadPerChannelEventLoop;
 
-import java.net.ConnectException;
 import java.net.SocketAddress;
 
 /**
  * Abstract base class for {@link Channel} implementations that use Old-Blocking-IO
+ *
+ * @deprecated use NIO / EPOLL / KQUEUE transport.
  */
+@Deprecated
 public abstract class AbstractOioChannel extends AbstractChannel {
 
     protected static final int SO_TIMEOUT = 1000;
 
-    private volatile boolean readPending;
-
-    private final Runnable readTask = new Runnable() {
+    boolean readPending;
+    boolean readWhenInactive;
+    final Runnable readTask = new Runnable() {
         @Override
         public void run() {
-            if (!isReadPending() && !config().isAutoRead()) {
-                // ChannelConfig.setAutoRead(false) was called in the meantime so just return
-                return;
-            }
-
-            setReadPending(false);
             doRead();
+        }
+    };
+    private final Runnable clearReadPendingRunnable = new Runnable() {
+        @Override
+        public void run() {
+            readPending = false;
         }
     };
 
@@ -70,17 +72,17 @@ public abstract class AbstractOioChannel extends AbstractChannel {
             try {
                 boolean wasActive = isActive();
                 doConnect(remoteAddress, localAddress);
+
+                // Get the state as trySuccess() may trigger an ChannelFutureListener that will close the Channel.
+                // We still need to ensure we call fireChannelActive() in this case.
+                boolean active = isActive();
+
                 safeSetSuccess(promise);
-                if (!wasActive && isActive()) {
+                if (!wasActive && active) {
                     pipeline().fireChannelActive();
                 }
             } catch (Throwable t) {
-                if (t instanceof ConnectException) {
-                    Throwable newT = new ConnectException(t.getMessage() + ": " + remoteAddress);
-                    newT.setStackTrace(t.getStackTrace());
-                    t = newT;
-                }
-                safeSetFailure(promise, t);
+                safeSetFailure(promise, annotateConnectException(t, remoteAddress));
                 closeIfClosed();
             }
         }
@@ -99,21 +101,66 @@ public abstract class AbstractOioChannel extends AbstractChannel {
 
     @Override
     protected void doBeginRead() throws Exception {
-        if (isReadPending()) {
+        if (readPending) {
+            return;
+        }
+        if (!isActive()) {
+            readWhenInactive = true;
             return;
         }
 
-        setReadPending(true);
+        readPending = true;
         eventLoop().execute(readTask);
     }
 
     protected abstract void doRead();
 
+    /**
+     * @deprecated No longer supported.
+     * No longer supported.
+     */
+    @Deprecated
     protected boolean isReadPending() {
         return readPending;
     }
 
-    protected void setReadPending(boolean readPending) {
-        this.readPending = readPending;
+    /**
+     * @deprecated Use {@link #clearReadPending()} if appropriate instead.
+     * No longer supported.
+     */
+    @Deprecated
+    protected void setReadPending(final boolean readPending) {
+        if (isRegistered()) {
+            EventLoop eventLoop = eventLoop();
+            if (eventLoop.inEventLoop()) {
+                this.readPending = readPending;
+            } else {
+                eventLoop.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        AbstractOioChannel.this.readPending = readPending;
+                    }
+                });
+            }
+        } else {
+            this.readPending = readPending;
+        }
+    }
+
+    /**
+     * Set read pending to {@code false}.
+     */
+    protected final void clearReadPending() {
+        if (isRegistered()) {
+            EventLoop eventLoop = eventLoop();
+            if (eventLoop.inEventLoop()) {
+                readPending = false;
+            } else {
+                eventLoop.execute(clearReadPendingRunnable);
+            }
+        } else {
+            // Best effort if we are not registered yet clear readPending. This happens during channel initialization.
+            readPending = false;
+        }
     }
 }

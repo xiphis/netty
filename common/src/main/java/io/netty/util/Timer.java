@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,6 +16,7 @@
 package io.netty.util;
 
 import java.util.Set;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -30,8 +31,9 @@ public interface Timer {
      *
      * @return a handle which is associated with the specified task
      *
-     * @throws IllegalStateException if this timer has been
-     *                               {@linkplain #stop() stopped} already
+     * @throws IllegalStateException       if this timer has been {@linkplain #stop() stopped} already
+     * @throws RejectedExecutionException if the pending timeouts are too many and creating new timeout
+     *                                    can cause instability in the system.
      */
     Timeout newTimeout(TimerTask task, long delay, TimeUnit unit);
 

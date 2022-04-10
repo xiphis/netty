@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,13 +15,17 @@
  */
 package io.netty.util;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Set;
 import java.util.TreeSet;
 
 import static org.hamcrest.CoreMatchers.*;
-import static org.junit.Assert.*;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class ConstantPoolTest {
 
@@ -38,9 +42,14 @@ public class ConstantPoolTest {
         }
     };
 
-    @Test(expected = NullPointerException.class)
+    @Test
     public void testCannotProvideNullName() {
-        pool.valueOf(null);
+        assertThrows(NullPointerException.class, new Executable() {
+            @Override
+            public void execute() {
+                pool.valueOf(null);
+            }
+        });
     }
 
     @Test
@@ -73,8 +82,17 @@ public class ConstantPoolTest {
         set.add(d);
         set.add(a);
 
-        TestConstant[] array = set.toArray(new TestConstant[5]);
+        TestConstant[] array = set.toArray(new TestConstant[0]);
         assertThat(array.length, is(5));
+
+        // Sort by name
+        Arrays.sort(array, new Comparator<TestConstant>() {
+            @Override
+            public int compare(TestConstant o1, TestConstant o2) {
+                return o1.name().compareTo(o2.name());
+            }
+        });
+
         assertThat(array[0], is(sameInstance(a)));
         assertThat(array[1], is(sameInstance(b)));
         assertThat(array[2], is(sameInstance(c)));

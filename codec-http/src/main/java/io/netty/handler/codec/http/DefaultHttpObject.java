@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,9 +16,11 @@
 package io.netty.handler.codec.http;
 
 import io.netty.handler.codec.DecoderResult;
+import io.netty.util.internal.ObjectUtil;
 
 public class DefaultHttpObject implements HttpObject {
 
+    private static final int HASH_CODE_PRIME = 31;
     private DecoderResult decoderResult = DecoderResult.SUCCESS;
 
     protected DefaultHttpObject() {
@@ -38,9 +40,24 @@ public class DefaultHttpObject implements HttpObject {
 
     @Override
     public void setDecoderResult(DecoderResult decoderResult) {
-        if (decoderResult == null) {
-            throw new NullPointerException("decoderResult");
+        this.decoderResult = ObjectUtil.checkNotNull(decoderResult, "decoderResult");
+    }
+
+    @Override
+    public int hashCode() {
+        int result = 1;
+        result = HASH_CODE_PRIME * result + decoderResult.hashCode();
+        return result;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof DefaultHttpObject)) {
+            return false;
         }
-        this.decoderResult = decoderResult;
+
+        DefaultHttpObject other = (DefaultHttpObject) o;
+
+        return decoderResult().equals(other.decoderResult());
     }
 }

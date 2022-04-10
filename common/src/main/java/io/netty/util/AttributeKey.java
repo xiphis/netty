@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -40,8 +40,21 @@ public final class AttributeKey<T> extends AbstractConstant<AttributeKey<T>> {
     }
 
     /**
-     * Shortcut of {@link #valueOf(String) valueOf(firstNameComponent.getName() + "#" + secondNameComponent)}.
+     * Returns {@code true} if a {@link AttributeKey} exists for the given {@code name}.
      */
+    public static boolean exists(String name) {
+        return pool.exists(name);
+    }
+
+    /**
+     * Creates a new {@link AttributeKey} for the given {@code name} or fail with an
+     * {@link IllegalArgumentException} if a {@link AttributeKey} for the given {@code name} exists.
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> AttributeKey<T> newInstance(String name) {
+        return (AttributeKey<T>) pool.newInstance(name);
+    }
+
     @SuppressWarnings("unchecked")
     public static <T> AttributeKey<T> valueOf(Class<?> firstNameComponent, String secondNameComponent) {
         return (AttributeKey<T>) pool.valueOf(firstNameComponent, secondNameComponent);

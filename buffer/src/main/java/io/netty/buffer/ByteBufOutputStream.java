@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -14,6 +14,9 @@
  * under the License.
  */
 package io.netty.buffer;
+
+import io.netty.util.CharsetUtil;
+import io.netty.util.internal.ObjectUtil;
 
 import java.io.DataOutput;
 import java.io.DataOutputStream;
@@ -37,16 +40,14 @@ public class ByteBufOutputStream extends OutputStream implements DataOutput {
 
     private final ByteBuf buffer;
     private final int startIndex;
-    private final DataOutputStream utf8out = new DataOutputStream(this);
+    private DataOutputStream utf8out; // lazily-instantiated
+    private boolean closed;
 
     /**
      * Creates a new stream which writes data to the specified {@code buffer}.
      */
     public ByteBufOutputStream(ByteBuf buffer) {
-        if (buffer == null) {
-            throw new NullPointerException("buffer");
-        }
-        this.buffer = buffer;
+        this.buffer = ObjectUtil.checkNotNull(buffer, "buffer");
         startIndex = buffer.writerIndex();
     }
 
@@ -73,48 +74,45 @@ public class ByteBufOutputStream extends OutputStream implements DataOutput {
 
     @Override
     public void write(int b) throws IOException {
-        buffer.writeByte((byte) b);
+        buffer.writeByte(b);
     }
 
     @Override
     public void writeBoolean(boolean v) throws IOException {
-        write(v? (byte) 1 : (byte) 0);
+        buffer.writeBoolean(v);
     }
 
     @Override
     public void writeByte(int v) throws IOException {
-        write(v);
+        buffer.writeByte(v);
     }
 
     @Override
     public void writeBytes(String s) throws IOException {
-        int len = s.length();
-        for (int i = 0; i < len; i ++) {
-            write((byte) s.charAt(i));
-        }
+        buffer.writeCharSequence(s, CharsetUtil.US_ASCII);
     }
 
     @Override
     public void writeChar(int v) throws IOException {
-        writeShort((short) v);
+        buffer.writeChar(v);
     }
 
     @Override
     public void writeChars(String s) throws IOException {
         int len = s.length();
         for (int i = 0 ; i < len ; i ++) {
-            writeChar(s.charAt(i));
+            buffer.writeChar(s.charAt(i));
         }
     }
 
     @Override
     public void writeDouble(double v) throws IOException {
-        writeLong(Double.doubleToLongBits(v));
+        buffer.writeDouble(v);
     }
 
     @Override
     public void writeFloat(float v) throws IOException {
-        writeInt(Float.floatToIntBits(v));
+        buffer.writeFloat(v);
     }
 
     @Override
@@ -134,7 +132,15 @@ public class ByteBufOutputStream extends OutputStream implements DataOutput {
 
     @Override
     public void writeUTF(String s) throws IOException {
-        utf8out.writeUTF(s);
+        DataOutputStream out = utf8out;
+        if (out == null) {
+            if (closed) {
+                throw new IOException("The stream is closed");
+            }
+            // Suppress a warning since the stream is closed in the close() method
+            utf8out = out = new DataOutputStream(this); // lgtm[java/output-resource-leak]
+        }
+        out.writeUTF(s);
     }
 
     /**
@@ -142,5 +148,21 @@ public class ByteBufOutputStream extends OutputStream implements DataOutput {
      */
     public ByteBuf buffer() {
         return buffer;
+    }
+
+    @Override
+    public void close() throws IOException {
+        if (closed) {
+            return;
+        }
+        closed = true;
+
+        try {
+            super.close();
+        } finally {
+            if (utf8out != null) {
+                utf8out.close();
+            }
+        }
     }
 }

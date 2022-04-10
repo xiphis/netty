@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -43,7 +43,7 @@ public class ContextBoundUnmarshallerProvider extends DefaultUnmarshallerProvide
 
     @Override
     public Unmarshaller getUnmarshaller(ChannelHandlerContext ctx) throws Exception {
-        Attribute<Unmarshaller> attr = ctx.attr(UNMARSHALLER);
+        Attribute<Unmarshaller> attr = ctx.channel().attr(UNMARSHALLER);
         Unmarshaller unmarshaller = attr.get();
         if (unmarshaller == null) {
             unmarshaller = super.getUnmarshaller(ctx);

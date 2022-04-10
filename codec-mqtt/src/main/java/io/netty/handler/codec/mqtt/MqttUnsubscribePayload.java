@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -22,9 +22,9 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Pyaload of the {@link MqttUnsubscribeMessage}
+ * Payload of the {@link MqttUnsubscribeMessage}
  */
-public class MqttUnsubscribePayload {
+public final class MqttUnsubscribePayload {
 
     private final List<String> topics;
 
@@ -39,11 +39,12 @@ public class MqttUnsubscribePayload {
     @Override
     public String toString() {
         StringBuilder builder = new StringBuilder(StringUtil.simpleClassName(this)).append('[');
-        for (int i = 0; i < topics.size() - 1; i++) {
-            builder.append("topicName = " + topics.get(i)).append(", ");
+        for (int i = 0; i < topics.size(); i++) {
+            builder.append("topicName = ").append(topics.get(i)).append(", ");
         }
-        builder.append("topicName = " + topics.get(topics.size() - 1));
-        builder.append(']');
-        return builder.toString();
+        if (!topics.isEmpty()) {
+            builder.setLength(builder.length() - 2);
+        }
+        return builder.append("]").toString();
     }
 }

@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -49,14 +49,14 @@ public abstract class ByteToMessageCodec<I> extends ChannelDuplexHandler {
     };
 
     /**
-     * @see {@link #ByteToMessageCodec(boolean)} with {@code true} as boolean parameter.
+     * see {@link #ByteToMessageCodec(boolean)} with {@code true} as boolean parameter.
      */
     protected ByteToMessageCodec() {
         this(true);
     }
 
     /**
-     * @see {@link #ByteToMessageCodec(Class, boolean)} with {@code true} as boolean value.
+     * see {@link #ByteToMessageCodec(Class, boolean)} with {@code true} as boolean value.
      */
     protected ByteToMessageCodec(Class<? extends I> outboundMessageType) {
         this(outboundMessageType, true);
@@ -70,6 +70,7 @@ public abstract class ByteToMessageCodec<I> extends ChannelDuplexHandler {
      *                              {@link ByteBuf}, which is backed by an byte array.
      */
     protected ByteToMessageCodec(boolean preferDirect) {
+        ensureNotSharable();
         outboundMsgMatcher = TypeParameterMatcher.find(this, ByteToMessageCodec.class, "I");
         encoder = new Encoder(preferDirect);
     }
@@ -83,15 +84,9 @@ public abstract class ByteToMessageCodec<I> extends ChannelDuplexHandler {
      *                              {@link ByteBuf}, which is backed by an byte array.
      */
     protected ByteToMessageCodec(Class<? extends I> outboundMessageType, boolean preferDirect) {
-        checkForSharableAnnotation();
+        ensureNotSharable();
         outboundMsgMatcher = TypeParameterMatcher.get(outboundMessageType);
         encoder = new Encoder(preferDirect);
-    }
-
-    private void checkForSharableAnnotation() {
-        if (isSharable()) {
-            throw new IllegalStateException("@Sharable annotation is not allowed");
-        }
     }
 
     /**
@@ -113,6 +108,34 @@ public abstract class ByteToMessageCodec<I> extends ChannelDuplexHandler {
         encoder.write(ctx, msg, promise);
     }
 
+    @Override
+    public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+        decoder.channelReadComplete(ctx);
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        decoder.channelInactive(ctx);
+    }
+
+    @Override
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+        try {
+            decoder.handlerAdded(ctx);
+        } finally {
+            encoder.handlerAdded(ctx);
+        }
+    }
+
+    @Override
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        try {
+            decoder.handlerRemoved(ctx);
+        } finally {
+            encoder.handlerRemoved(ctx);
+        }
+    }
+
     /**
      * @see MessageToByteEncoder#encode(ChannelHandlerContext, Object, ByteBuf)
      */
@@ -127,7 +150,11 @@ public abstract class ByteToMessageCodec<I> extends ChannelDuplexHandler {
      * @see ByteToMessageDecoder#decodeLast(ChannelHandlerContext, ByteBuf, List)
      */
     protected void decodeLast(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
-        decode(ctx, in, out);
+        if (in.isReadable()) {
+            // Only call decode() if there is something left in the buffer to decode.
+            // See https://github.com/netty/netty/issues/4386
+            decode(ctx, in, out);
+        }
     }
 
     private final class Encoder extends MessageToByteEncoder<I> {

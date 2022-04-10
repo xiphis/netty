@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -43,27 +43,29 @@ public interface HttpData extends InterfaceHttpData, ByteBufHolder {
 
     /**
      * Check if the new size is not reaching the max limit allowed.
-     * The limit is always computed in term of bytes.
+     * The limit is always computed in terms of bytes.
      */
     void checkSize(long newSize) throws IOException;
 
     /**
      * Set the content from the ChannelBuffer (erase any previous data)
+     * <p>{@link ByteBuf#release()} ownership of {@code buffer} is transferred to this {@link HttpData}.
      *
      * @param buffer
      *            must be not null
-     * @exception IOException
+     * @throws IOException
      */
     void setContent(ByteBuf buffer) throws IOException;
 
     /**
      * Add the content from the ChannelBuffer
+     * <p>{@link ByteBuf#release()} ownership of {@code buffer} is transferred to this {@link HttpData}.
      *
      * @param buffer
      *            must be not null except if last is set to False
      * @param last
      *            True of the buffer is the last one
-     * @exception IOException
+     * @throws IOException
      */
     void addContent(ByteBuf buffer, boolean last) throws IOException;
 
@@ -72,7 +74,7 @@ public interface HttpData extends InterfaceHttpData, ByteBufHolder {
      *
      * @param file
      *            must be not null
-     * @exception IOException
+     * @throws IOException
      */
     void setContent(File file) throws IOException;
 
@@ -81,7 +83,7 @@ public interface HttpData extends InterfaceHttpData, ByteBufHolder {
      *
      * @param inputStream
      *            must be not null
-     * @exception IOException
+     * @throws IOException
      */
     void setContent(InputStream inputStream) throws IOException;
 
@@ -99,21 +101,39 @@ public interface HttpData extends InterfaceHttpData, ByteBufHolder {
     long length();
 
     /**
+     * Returns the defined length of the HttpData.
+     *
+     * If no Content-Length is provided in the request, the defined length is
+     * always 0 (whatever during decoding or in final state).
+     *
+     * If Content-Length is provided in the request, this is this given defined length.
+     * This value does not change, whatever during decoding or in the final state.
+     *
+     * This method could be used for instance to know the amount of bytes transmitted for
+     * one particular HttpData, for example one {@link FileUpload} or any known big {@link Attribute}.
+     *
+     * @return the defined length of the HttpData
+     */
+    long definedLength();
+
+    /**
      * Deletes the underlying storage for a file item, including deleting any
      * associated temporary disk file.
      */
     void delete();
 
     /**
-     * Returns the contents of the file item as an array of bytes.
+     * Returns the contents of the file item as an array of bytes.<br>
+     * Note: this method will allocate a lot of memory, if the data is currently stored on the file system.
      *
      * @return the contents of the file item as an array of bytes.
-     * @exception IOException
+     * @throws IOException
      */
     byte[] get() throws IOException;
 
     /**
-     * Returns the content of the file item as a ByteBuf
+     * Returns the content of the file item as a ByteBuf.<br>
+     * Note: this method will allocate a lot of memory, if the data is currently stored on the file system.
      *
      * @return the content of the file item as a ByteBuf
      * @throws IOException
@@ -137,7 +157,7 @@ public interface HttpData extends InterfaceHttpData, ByteBufHolder {
      *
      * @return the contents of the file item as a String, using the default
      *         character encoding.
-     * @exception IOException
+     * @throws IOException
      */
     String getString() throws IOException;
 
@@ -149,7 +169,7 @@ public interface HttpData extends InterfaceHttpData, ByteBufHolder {
      *            the charset to use
      * @return the contents of the file item as a String, using the specified
      *         charset.
-     * @exception IOException
+     * @throws IOException
      */
     String getString(Charset encoding) throws IOException;
 
@@ -177,7 +197,7 @@ public interface HttpData extends InterfaceHttpData, ByteBufHolder {
      * @param dest
      *            destination file - must be not null
      * @return True if the write is successful
-     * @exception IOException
+     * @throws IOException
      */
     boolean renameTo(File dest) throws IOException;
 
@@ -202,6 +222,12 @@ public interface HttpData extends InterfaceHttpData, ByteBufHolder {
 
     @Override
     HttpData duplicate();
+
+    @Override
+    HttpData retainedDuplicate();
+
+    @Override
+    HttpData replace(ByteBuf content);
 
     @Override
     HttpData retain();

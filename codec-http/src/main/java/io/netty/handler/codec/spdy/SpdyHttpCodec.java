@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -15,16 +15,23 @@
  */
 package io.netty.handler.codec.spdy;
 
-import io.netty.channel.ChannelHandlerAppender;
+import io.netty.channel.CombinedChannelDuplexHandler;
 
 /**
  * A combination of {@link SpdyHttpDecoder} and {@link SpdyHttpEncoder}
  */
-public final class SpdyHttpCodec extends ChannelHandlerAppender {
+public final class SpdyHttpCodec extends CombinedChannelDuplexHandler<SpdyHttpDecoder, SpdyHttpEncoder> {
     /**
      * Creates a new instance with the specified decoder options.
      */
     public SpdyHttpCodec(SpdyVersion version, int maxContentLength) {
         super(new SpdyHttpDecoder(version, maxContentLength), new SpdyHttpEncoder(version));
+    }
+
+    /**
+     * Creates a new instance with the specified decoder options.
+     */
+    public SpdyHttpCodec(SpdyVersion version, int maxContentLength, boolean validateHttpHeaders) {
+        super(new SpdyHttpDecoder(version, maxContentLength, validateHttpHeaders), new SpdyHttpEncoder(version));
     }
 }

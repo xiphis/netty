@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,10 +17,14 @@ package io.netty.channel.udt.nio;
 
 import com.barchart.udt.TypeUDT;
 import com.barchart.udt.nio.ServerSocketChannelUDT;
+import com.barchart.udt.nio.SocketChannelUDT;
 import io.netty.channel.ChannelException;
+import io.netty.channel.ChannelMetadata;
 import io.netty.channel.ChannelOutboundBuffer;
+import io.netty.util.internal.SocketUtils;
 import io.netty.channel.nio.AbstractNioMessageChannel;
 import io.netty.channel.udt.DefaultUdtServerChannelConfig;
+import io.netty.channel.udt.UdtChannel;
 import io.netty.channel.udt.UdtServerChannel;
 import io.netty.channel.udt.UdtServerChannelConfig;
 import io.netty.util.internal.logging.InternalLogger;
@@ -28,16 +32,22 @@ import io.netty.util.internal.logging.InternalLoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.List;
 
 import static java.nio.channels.SelectionKey.*;
 
 /**
  * Common base for Netty Byte/Message UDT Stream/Datagram acceptors.
+ *
+ * @deprecated The UDT transport is no longer maintained and will be removed.
  */
+@Deprecated
 public abstract class NioUdtAcceptorChannel extends AbstractNioMessageChannel implements UdtServerChannel {
 
     protected static final InternalLogger logger =
             InternalLoggerFactory.getInstance(NioUdtAcceptorChannel.class);
+
+    private static final ChannelMetadata METADATA = new ChannelMetadata(false, 16);
 
     private final UdtServerChannelConfig config;
 
@@ -99,6 +109,11 @@ public abstract class NioUdtAcceptorChannel extends AbstractNioMessageChannel im
     }
 
     @Override
+    protected final Object filterOutboundMessage(Object msg) throws Exception {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public boolean isActive() {
         return javaChannel().socket().isBound();
     }
@@ -110,8 +125,9 @@ public abstract class NioUdtAcceptorChannel extends AbstractNioMessageChannel im
 
     @Override
     protected SocketAddress localAddress0() {
-        return javaChannel().socket().getLocalSocketAddress();
+        return SocketUtils.localSocketAddress(javaChannel().socket());
     }
+
     @Override
     public InetSocketAddress localAddress() {
         return (InetSocketAddress) super.localAddress();
@@ -127,4 +143,21 @@ public abstract class NioUdtAcceptorChannel extends AbstractNioMessageChannel im
         return null;
     }
 
+    @Override
+    public ChannelMetadata metadata() {
+        return METADATA;
+    }
+
+    @Override
+    protected int doReadMessages(List<Object> buf) throws Exception {
+        final SocketChannelUDT channelUDT = (SocketChannelUDT) SocketUtils.accept(javaChannel());
+        if (channelUDT == null) {
+            return 0;
+        } else {
+            buf.add(newConnectorChannel(channelUDT));
+            return 1;
+        }
+    }
+
+    protected abstract UdtChannel newConnectorChannel(SocketChannelUDT channelUDT);
 }

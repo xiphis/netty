@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,9 +18,9 @@ package io.netty.bootstrap;
 import io.netty.channel.Channel;
 
 /**
- * Factory that creates a new {@link Channel} on {@link Bootstrap#bind()}, {@link Bootstrap#connect()}, and
- * {@link ServerBootstrap#bind()}.
+ * @deprecated Use {@link io.netty.channel.ChannelFactory} instead.
  */
+@Deprecated
 public interface ChannelFactory<T extends Channel> {
     /**
      * Creates a new channel.

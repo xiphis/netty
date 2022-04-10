@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,23 +20,29 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.handler.codec.TooLongFrameException;
 import io.netty.util.CharsetUtil;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class StompSubframeAggregatorTest {
 
     private EmbeddedChannel channel;
 
-    @Before
-    public void setup() throws Exception {
+    @BeforeEach
+    public void setup() {
         channel = new EmbeddedChannel(new StompSubframeDecoder(), new StompSubframeAggregator(100000));
     }
 
-    @After
-    public void teardown() throws Exception {
-        Assert.assertFalse(channel.finish());
+    @AfterEach
+    public void teardown() {
+        assertFalse(channel.finish());
     }
 
     @Test
@@ -44,9 +50,11 @@ public class StompSubframeAggregatorTest {
         ByteBuf incoming = Unpooled.buffer();
         incoming.writeBytes(StompTestConstants.CONNECT_FRAME.getBytes());
         channel.writeInbound(incoming);
-        StompHeadersSubframe frame = channel.readInbound();
-        Assert.assertTrue(frame instanceof StompFrame);
-        Assert.assertNull(channel.readInbound());
+
+        StompFrame frame = channel.readInbound();
+        frame.release();
+
+        assertNull(channel.readInbound());
     }
 
     @Test
@@ -54,11 +62,47 @@ public class StompSubframeAggregatorTest {
         ByteBuf incoming = Unpooled.buffer();
         incoming.writeBytes(StompTestConstants.SEND_FRAME_2.getBytes());
         channel.writeInbound(incoming);
+
         StompFrame frame = channel.readInbound();
-        Assert.assertNotNull(frame);
-        Assert.assertEquals(StompCommand.SEND, frame.command());
-        Assert.assertEquals("hello, queue a!!!", frame.content().toString(CharsetUtil.UTF_8));
-        Assert.assertNull(channel.readInbound());
+        assertNotNull(frame);
+        assertEquals(StompCommand.SEND, frame.command());
+        assertEquals("hello, queue a!!!", frame.content().toString(CharsetUtil.UTF_8));
+        frame.release();
+
+        assertNull(channel.readInbound());
+    }
+
+    @Test
+    public void testSingleFrameWithBodyAndNoContentLength() {
+        ByteBuf incoming = Unpooled.buffer();
+        incoming.writeBytes(StompTestConstants.SEND_FRAME_4.getBytes());
+        channel.writeInbound(incoming);
+
+        StompFrame frame = channel.readInbound();
+        assertNotNull(frame);
+        assertEquals(StompCommand.SEND, frame.command());
+        assertEquals("body", frame.content().toString(CharsetUtil.UTF_8));
+        frame.release();
+
+        assertNull(channel.readInbound());
+    }
+
+    @Test
+    public void testSingleFrameWithSplitBodyAndNoContentLength() {
+        for (int n = 0; n < StompTestConstants.SEND_FRAMES_3.length; ++n) {
+            ByteBuf incoming = Unpooled.buffer();
+            incoming.writeBytes(StompTestConstants.SEND_FRAMES_3[n].getBytes());
+            channel.writeInbound(incoming);
+            channel.flush();
+        }
+
+        StompFrame frame = channel.readInbound();
+        assertNotNull(frame);
+        assertEquals(StompCommand.SEND, frame.command());
+        assertEquals("first part of body\nsecond part of body", frame.content().toString(CharsetUtil.UTF_8));
+        frame.release();
+
+        assertNull(channel.readInbound());
     }
 
     @Test
@@ -68,10 +112,13 @@ public class StompSubframeAggregatorTest {
         ByteBuf incoming = Unpooled.buffer();
         incoming.writeBytes(StompTestConstants.SEND_FRAME_2.getBytes());
         channel.writeInbound(incoming);
+
         StompFrame frame = channel.readInbound();
-        Assert.assertNotNull(frame);
-        Assert.assertEquals(StompCommand.SEND, frame.command());
-        Assert.assertNull(channel.readInbound());
+        assertNotNull(frame);
+        assertEquals(StompCommand.SEND, frame.command());
+        frame.release();
+
+        assertNull(channel.readInbound());
     }
 
     @Test
@@ -81,18 +128,31 @@ public class StompSubframeAggregatorTest {
         incoming.writeBytes(StompTestConstants.CONNECTED_FRAME.getBytes());
         channel.writeInbound(incoming);
         channel.writeInbound(Unpooled.wrappedBuffer(StompTestConstants.SEND_FRAME_1.getBytes()));
+
         StompFrame frame = channel.readInbound();
-        Assert.assertEquals(StompCommand.CONNECT, frame.command());
+        assertEquals(StompCommand.CONNECT, frame.command());
+        frame.release();
+
         frame = channel.readInbound();
-        Assert.assertEquals(StompCommand.CONNECTED, frame.command());
+        assertEquals(StompCommand.CONNECTED, frame.command());
+        frame.release();
+
         frame = channel.readInbound();
-        Assert.assertEquals(StompCommand.SEND, frame.command());
-        Assert.assertNull(channel.readInbound());
+        assertEquals(StompCommand.SEND, frame.command());
+        frame.release();
+
+        assertNull(channel.readInbound());
     }
 
-    @Test(expected = TooLongFrameException.class)
+    @Test
     public void testTooLongFrameException() {
-        EmbeddedChannel channel = new EmbeddedChannel(new StompSubframeDecoder(), new StompSubframeAggregator(10));
-        channel.writeInbound(Unpooled.wrappedBuffer(StompTestConstants.SEND_FRAME_1.getBytes()));
+        final EmbeddedChannel channel = new EmbeddedChannel(new StompSubframeDecoder(),
+                new StompSubframeAggregator(10));
+        assertThrows(TooLongFrameException.class, new Executable() {
+            @Override
+            public void execute() {
+                channel.writeInbound(Unpooled.wrappedBuffer(StompTestConstants.SEND_FRAME_1.getBytes()));
+            }
+        });
     }
 }

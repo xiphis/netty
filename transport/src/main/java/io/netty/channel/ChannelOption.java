@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -18,19 +18,20 @@ package io.netty.channel;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.util.AbstractConstant;
 import io.netty.util.ConstantPool;
+import io.netty.util.internal.ObjectUtil;
 
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 
 /**
- * A {@link ChannelOption} allows to configure a {@link ChannelConfig} in a type-safe
+ * A {@link ChannelOption} allows to configure a {@link ChannelConfig} in a type-safe
  * way. Which {@link ChannelOption} is supported depends on the actual implementation
  * of {@link ChannelConfig} and may depend on the nature of the transport it belongs
  * to.
  *
  * @param <T>   the type of the value which is valid for the {@link ChannelOption}
  */
-public final class ChannelOption<T> extends AbstractConstant<ChannelOption<T>> {
+public class ChannelOption<T> extends AbstractConstant<ChannelOption<T>> {
 
     private static final ConstantPool<ChannelOption<Object>> pool = new ConstantPool<ChannelOption<Object>>() {
         @Override
@@ -55,26 +56,59 @@ public final class ChannelOption<T> extends AbstractConstant<ChannelOption<T>> {
         return (ChannelOption<T>) pool.valueOf(firstNameComponent, secondNameComponent);
     }
 
+    /**
+     * Returns {@code true} if a {@link ChannelOption} exists for the given {@code name}.
+     */
+    public static boolean exists(String name) {
+        return pool.exists(name);
+    }
+
+    /**
+     * Creates a new {@link ChannelOption} for the given {@code name} or fail with an
+     * {@link IllegalArgumentException} if a {@link ChannelOption} for the given {@code name} exists.
+     *
+     * @deprecated use {@link #valueOf(String)}.
+     */
+    @Deprecated
+    @SuppressWarnings("unchecked")
+    public static <T> ChannelOption<T> newInstance(String name) {
+        return (ChannelOption<T>) pool.newInstance(name);
+    }
+
     public static final ChannelOption<ByteBufAllocator> ALLOCATOR = valueOf("ALLOCATOR");
     public static final ChannelOption<RecvByteBufAllocator> RCVBUF_ALLOCATOR = valueOf("RCVBUF_ALLOCATOR");
     public static final ChannelOption<MessageSizeEstimator> MESSAGE_SIZE_ESTIMATOR = valueOf("MESSAGE_SIZE_ESTIMATOR");
 
     public static final ChannelOption<Integer> CONNECT_TIMEOUT_MILLIS = valueOf("CONNECT_TIMEOUT_MILLIS");
+    /**
+     * @deprecated Use {@link MaxMessagesRecvByteBufAllocator}
+     * and {@link MaxMessagesRecvByteBufAllocator#maxMessagesPerRead(int)}.
+     */
+    @Deprecated
     public static final ChannelOption<Integer> MAX_MESSAGES_PER_READ = valueOf("MAX_MESSAGES_PER_READ");
+    public static final ChannelOption<Integer> MAX_MESSAGES_PER_WRITE = valueOf("MAX_MESSAGES_PER_WRITE");
+
     public static final ChannelOption<Integer> WRITE_SPIN_COUNT = valueOf("WRITE_SPIN_COUNT");
+    /**
+     * @deprecated Use {@link #WRITE_BUFFER_WATER_MARK}
+     */
+    @Deprecated
     public static final ChannelOption<Integer> WRITE_BUFFER_HIGH_WATER_MARK = valueOf("WRITE_BUFFER_HIGH_WATER_MARK");
+    /**
+     * @deprecated Use {@link #WRITE_BUFFER_WATER_MARK}
+     */
+    @Deprecated
     public static final ChannelOption<Integer> WRITE_BUFFER_LOW_WATER_MARK = valueOf("WRITE_BUFFER_LOW_WATER_MARK");
+    public static final ChannelOption<WriteBufferWaterMark> WRITE_BUFFER_WATER_MARK =
+            valueOf("WRITE_BUFFER_WATER_MARK");
 
     public static final ChannelOption<Boolean> ALLOW_HALF_CLOSURE = valueOf("ALLOW_HALF_CLOSURE");
     public static final ChannelOption<Boolean> AUTO_READ = valueOf("AUTO_READ");
 
     /**
-     * @deprecated From version 5.0, {@link Channel} will not be closed on write failure.
-     *
-     * {@code true} if and only if the {@link Channel} is closed automatically and immediately on write failure.
-     * The default is {@code false}.
+     * If {@code true} then the {@link Channel} is closed automatically and immediately on write failure.
+     * The default value is {@code true}.
      */
-    @Deprecated
     public static final ChannelOption<Boolean> AUTO_CLOSE = valueOf("AUTO_CLOSE");
 
     public static final ChannelOption<Boolean> SO_BROADCAST = valueOf("SO_BROADCAST");
@@ -93,10 +127,22 @@ public final class ChannelOption<T> extends AbstractConstant<ChannelOption<T>> {
     public static final ChannelOption<Boolean> IP_MULTICAST_LOOP_DISABLED = valueOf("IP_MULTICAST_LOOP_DISABLED");
 
     public static final ChannelOption<Boolean> TCP_NODELAY = valueOf("TCP_NODELAY");
+    /**
+     * Client-side TCP FastOpen. Sending data with the initial TCP handshake.
+     */
+    public static final ChannelOption<Boolean> TCP_FASTOPEN_CONNECT = valueOf("TCP_FASTOPEN_CONNECT");
+
+    /**
+     * Server-side TCP FastOpen. Configures the maximum number of outstanding (waiting to be accepted) TFO connections.
+     */
+    public static final ChannelOption<Integer> TCP_FASTOPEN = valueOf(ChannelOption.class, "TCP_FASTOPEN");
 
     @Deprecated
     public static final ChannelOption<Boolean> DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION =
             valueOf("DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION");
+
+    public static final ChannelOption<Boolean> SINGLE_EVENTEXECUTOR_PER_GROUP =
+            valueOf("SINGLE_EVENTEXECUTOR_PER_GROUP");
 
     /**
      * Creates a new {@link ChannelOption} with the specified unique {@code name}.
@@ -105,13 +151,16 @@ public final class ChannelOption<T> extends AbstractConstant<ChannelOption<T>> {
         super(id, name);
     }
 
+    @Deprecated
+    protected ChannelOption(String name) {
+        this(pool.nextId(), name);
+    }
+
     /**
      * Validate the value which is set for the {@link ChannelOption}. Sub-classes
      * may override this for special checks.
      */
     public void validate(T value) {
-        if (value == null) {
-            throw new NullPointerException("value");
-        }
+        ObjectUtil.checkNotNull(value, "value");
     }
 }

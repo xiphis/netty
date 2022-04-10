@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -46,35 +46,63 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
     private SpdySettingsFrame spdySettingsFrame;
 
     private ChannelHandlerContext ctx;
+    private boolean read;
+    private final boolean validateHeaders;
 
     /**
-     * Creates a new instance with the specified {@code version} and
+     * Creates a new instance with the specified {@code version},
+     * {@code validateHeaders (true)}, and
      * the default decoder and encoder options
      * ({@code maxChunkSize (8192)}, {@code maxHeaderSize (16384)},
      * {@code compressionLevel (6)}, {@code windowBits (15)},
      * and {@code memLevel (8)}).
      */
     public SpdyFrameCodec(SpdyVersion version) {
-        this(version, 8192, 16384, 6, 15, 8);
+        this(version, true);
     }
 
     /**
-     * Creates a new instance with the specified decoder and encoder options.
+     * Creates a new instance with the specified {@code version},
+     * {@code validateHeaders}, and
+     * the default decoder and encoder options
+     * ({@code maxChunkSize (8192)}, {@code maxHeaderSize (16384)},
+     * {@code compressionLevel (6)}, {@code windowBits (15)},
+     * and {@code memLevel (8)}).
+     */
+    public SpdyFrameCodec(SpdyVersion version, boolean validateHeaders) {
+        this(version, 8192, 16384, 6, 15, 8, validateHeaders);
+    }
+
+    /**
+     * Creates a new instance with the specified {@code version}, {@code validateHeaders (true)},
+     * decoder and encoder options.
      */
     public SpdyFrameCodec(
             SpdyVersion version, int maxChunkSize, int maxHeaderSize,
             int compressionLevel, int windowBits, int memLevel) {
+        this(version, maxChunkSize, maxHeaderSize, compressionLevel, windowBits, memLevel, true);
+    }
+
+    /**
+     * Creates a new instance with the specified {@code version}, {@code validateHeaders},
+     * decoder and encoder options.
+     */
+    public SpdyFrameCodec(
+            SpdyVersion version, int maxChunkSize, int maxHeaderSize,
+            int compressionLevel, int windowBits, int memLevel, boolean validateHeaders) {
         this(version, maxChunkSize,
                 SpdyHeaderBlockDecoder.newInstance(version, maxHeaderSize),
-                SpdyHeaderBlockEncoder.newInstance(version, compressionLevel, windowBits, memLevel));
+                SpdyHeaderBlockEncoder.newInstance(version, compressionLevel, windowBits, memLevel), validateHeaders);
     }
 
     protected SpdyFrameCodec(SpdyVersion version, int maxChunkSize,
-            SpdyHeaderBlockDecoder spdyHeaderBlockDecoder, SpdyHeaderBlockEncoder spdyHeaderBlockEncoder) {
+            SpdyHeaderBlockDecoder spdyHeaderBlockDecoder, SpdyHeaderBlockEncoder spdyHeaderBlockEncoder,
+            boolean validateHeaders) {
         spdyFrameDecoder = new SpdyFrameDecoder(version, this, maxChunkSize);
         spdyFrameEncoder = new SpdyFrameEncoder(version);
         this.spdyHeaderBlockDecoder = spdyHeaderBlockDecoder;
         this.spdyHeaderBlockEncoder = spdyHeaderBlockEncoder;
+        this.validateHeaders = validateHeaders;
     }
 
     @Override
@@ -93,6 +121,17 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         spdyFrameDecoder.decode(in);
+    }
+
+    @Override
+    public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+        if (!read) {
+            if (!ctx.channel().config().isAutoRead()) {
+                ctx.read();
+            }
+        }
+        read = false;
+        super.channelReadComplete(ctx);
     }
 
     @Override
@@ -150,7 +189,7 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
         } else if (msg instanceof SpdySynStreamFrame) {
 
             SpdySynStreamFrame spdySynStreamFrame = (SpdySynStreamFrame) msg;
-            ByteBuf headerBlock = spdyHeaderBlockEncoder.encode(spdySynStreamFrame);
+            ByteBuf headerBlock = spdyHeaderBlockEncoder.encode(ctx.alloc(), spdySynStreamFrame);
             try {
                 frame = spdyFrameEncoder.encodeSynStreamFrame(
                         ctx.alloc(),
@@ -169,7 +208,7 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
         } else if (msg instanceof SpdySynReplyFrame) {
 
             SpdySynReplyFrame spdySynReplyFrame = (SpdySynReplyFrame) msg;
-            ByteBuf headerBlock = spdyHeaderBlockEncoder.encode(spdySynReplyFrame);
+            ByteBuf headerBlock = spdyHeaderBlockEncoder.encode(ctx.alloc(), spdySynReplyFrame);
             try {
                 frame = spdyFrameEncoder.encodeSynReplyFrame(
                         ctx.alloc(),
@@ -223,7 +262,7 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
         } else if (msg instanceof SpdyHeadersFrame) {
 
             SpdyHeadersFrame spdyHeadersFrame = (SpdyHeadersFrame) msg;
-            ByteBuf headerBlock = spdyHeaderBlockEncoder.encode(spdyHeadersFrame);
+            ByteBuf headerBlock = spdyHeaderBlockEncoder.encode(ctx.alloc(), spdyHeadersFrame);
             try {
                 frame = spdyFrameEncoder.encodeHeadersFrame(
                         ctx.alloc(),
@@ -252,6 +291,8 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
 
     @Override
     public void readDataFrame(int streamId, boolean last, ByteBuf data) {
+        read = true;
+
         SpdyDataFrame spdyDataFrame = new DefaultSpdyDataFrame(streamId, data);
         spdyDataFrame.setLast(last);
         ctx.fireChannelRead(spdyDataFrame);
@@ -260,7 +301,8 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
     @Override
     public void readSynStreamFrame(
             int streamId, int associatedToStreamId, byte priority, boolean last, boolean unidirectional) {
-        SpdySynStreamFrame spdySynStreamFrame = new DefaultSpdySynStreamFrame(streamId, associatedToStreamId, priority);
+        SpdySynStreamFrame spdySynStreamFrame =
+                new DefaultSpdySynStreamFrame(streamId, associatedToStreamId, priority, validateHeaders);
         spdySynStreamFrame.setLast(last);
         spdySynStreamFrame.setUnidirectional(unidirectional);
         spdyHeadersFrame = spdySynStreamFrame;
@@ -268,19 +310,23 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
 
     @Override
     public void readSynReplyFrame(int streamId, boolean last) {
-        SpdySynReplyFrame spdySynReplyFrame = new DefaultSpdySynReplyFrame(streamId);
+        SpdySynReplyFrame spdySynReplyFrame = new DefaultSpdySynReplyFrame(streamId, validateHeaders);
         spdySynReplyFrame.setLast(last);
         spdyHeadersFrame = spdySynReplyFrame;
     }
 
     @Override
     public void readRstStreamFrame(int streamId, int statusCode) {
+        read = true;
+
         SpdyRstStreamFrame spdyRstStreamFrame = new DefaultSpdyRstStreamFrame(streamId, statusCode);
         ctx.fireChannelRead(spdyRstStreamFrame);
     }
 
     @Override
     public void readSettingsFrame(boolean clearPersisted) {
+        read = true;
+
         spdySettingsFrame = new DefaultSpdySettingsFrame();
         spdySettingsFrame.setClearPreviouslyPersistedSettings(clearPersisted);
     }
@@ -292,6 +338,8 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
 
     @Override
     public void readSettingsEnd() {
+        read = true;
+
         Object frame = spdySettingsFrame;
         spdySettingsFrame = null;
         ctx.fireChannelRead(frame);
@@ -299,24 +347,30 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
 
     @Override
     public void readPingFrame(int id) {
+        read = true;
+
         SpdyPingFrame spdyPingFrame = new DefaultSpdyPingFrame(id);
         ctx.fireChannelRead(spdyPingFrame);
     }
 
     @Override
     public void readGoAwayFrame(int lastGoodStreamId, int statusCode) {
+        read = true;
+
         SpdyGoAwayFrame spdyGoAwayFrame = new DefaultSpdyGoAwayFrame(lastGoodStreamId, statusCode);
         ctx.fireChannelRead(spdyGoAwayFrame);
     }
 
     @Override
     public void readHeadersFrame(int streamId, boolean last) {
-        spdyHeadersFrame = new DefaultSpdyHeadersFrame(streamId);
+        spdyHeadersFrame = new DefaultSpdyHeadersFrame(streamId, validateHeaders);
         spdyHeadersFrame.setLast(last);
     }
 
     @Override
     public void readWindowUpdateFrame(int streamId, int deltaWindowSize) {
+        read = true;
+
         SpdyWindowUpdateFrame spdyWindowUpdateFrame = new DefaultSpdyWindowUpdateFrame(streamId, deltaWindowSize);
         ctx.fireChannelRead(spdyWindowUpdateFrame);
     }
@@ -324,7 +378,7 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
     @Override
     public void readHeaderBlock(ByteBuf headerBlock) {
         try {
-            spdyHeaderBlockDecoder.decode(headerBlock, spdyHeadersFrame);
+            spdyHeaderBlockDecoder.decode(ctx.alloc(), headerBlock, spdyHeadersFrame);
         } catch (Exception e) {
             ctx.fireExceptionCaught(e);
         } finally {
@@ -343,6 +397,8 @@ public class SpdyFrameCodec extends ByteToMessageDecoder
             ctx.fireExceptionCaught(e);
         }
         if (frame != null) {
+            read = true;
+
             ctx.fireChannelRead(frame);
         }
     }

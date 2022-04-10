@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -17,6 +17,7 @@ package io.netty.handler.codec.socks;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.CharsetUtil;
+import io.netty.util.internal.ObjectUtil;
 
 import java.nio.charset.CharsetEncoder;
 
@@ -27,28 +28,24 @@ import java.nio.charset.CharsetEncoder;
  * @see SocksAuthRequestDecoder
  */
 public final class SocksAuthRequest extends SocksRequest {
-    private static final CharsetEncoder asciiEncoder = CharsetUtil.getEncoder(CharsetUtil.US_ASCII);
     private static final SocksSubnegotiationVersion SUBNEGOTIATION_VERSION = SocksSubnegotiationVersion.AUTH_PASSWORD;
     private final String username;
     private final String password;
 
     public SocksAuthRequest(String username, String password) {
         super(SocksRequestType.AUTH);
-        if (username == null) {
-            throw new NullPointerException("username");
-        }
-        if (password == null) {
-            throw new NullPointerException("username");
-        }
+        ObjectUtil.checkNotNull(username, "username");
+        ObjectUtil.checkNotNull(password, "password");
+        final CharsetEncoder asciiEncoder = CharsetUtil.encoder(CharsetUtil.US_ASCII);
         if (!asciiEncoder.canEncode(username) || !asciiEncoder.canEncode(password)) {
-            throw new IllegalArgumentException(" username: " + username + " or password: " + password +
-                    " values should be in pure ascii");
+            throw new IllegalArgumentException(
+                    "username: " + username + " or password: **** values should be in pure ascii");
         }
         if (username.length() > 255) {
-            throw new IllegalArgumentException(username + " exceeds 255 char limit");
+            throw new IllegalArgumentException("username: " + username + " exceeds 255 char limit");
         }
         if (password.length() > 255) {
-            throw new IllegalArgumentException(password + " exceeds 255 char limit");
+            throw new IllegalArgumentException("password: **** exceeds 255 char limit");
         }
         this.username = username;
         this.password = password;
@@ -76,8 +73,8 @@ public final class SocksAuthRequest extends SocksRequest {
     public void encodeAsByteBuf(ByteBuf byteBuf) {
         byteBuf.writeByte(SUBNEGOTIATION_VERSION.byteValue());
         byteBuf.writeByte(username.length());
-        byteBuf.writeBytes(username.getBytes(CharsetUtil.US_ASCII));
+        byteBuf.writeCharSequence(username, CharsetUtil.US_ASCII);
         byteBuf.writeByte(password.length());
-        byteBuf.writeBytes(password.getBytes(CharsetUtil.US_ASCII));
+        byteBuf.writeCharSequence(password, CharsetUtil.US_ASCII);
     }
 }
